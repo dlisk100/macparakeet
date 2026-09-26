@@ -153,6 +153,12 @@ stable MacParakeet.app release or standalone CLI channel.
   the kept recording is deleted and `audioPath` cleared, unless Save audio
   recordings is on.
 
+- Developer-enabled Ask now retrieves passages with ranked any-term search and
+  exposes continuation metadata to its internal search/read tools. Search no
+  longer requires every query word in a passage. Public `ask` command JSON
+  envelopes and citation identities are unchanged. Ask remains disabled in
+  Release builds; this does not qualify model answer quality.
+
 ## [4.6.0] — 2026-09-23
 
 ### Fixed
