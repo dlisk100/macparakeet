@@ -90,8 +90,7 @@ final class AppEnvironmentTests: XCTestCase {
     }
 
     func testSyncAIFormatterAvailabilityWritesTrueWhenProviderExists() {
-        let (suiteName, defaults) = makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let (_, defaults) = makeDefaults()
         let configStore = MockLLMConfigStore()
         configStore.config = .openai(apiKey: "sk-test")
 
@@ -111,8 +110,7 @@ final class AppEnvironmentTests: XCTestCase {
     }
 
     func testSyncAIFormatterAvailabilityOverwritesLegacyExplicitFalseWhenProviderExists() {
-        let (suiteName, defaults) = makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let (_, defaults) = makeDefaults()
         defaults.set(false, forKey: UserDefaultsAppRuntimePreferences.aiFormatterEnabledKey)
         let configStore = MockLLMConfigStore()
         configStore.config = .openai(apiKey: "sk-test")
@@ -133,8 +131,7 @@ final class AppEnvironmentTests: XCTestCase {
     }
 
     func testSyncAIFormatterAvailabilityDoesNotMigrateLegacyExplicitFalseOnSecondRun() {
-        let (suiteName, defaults) = makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let (_, defaults) = makeDefaults()
         defaults.set(false, forKey: UserDefaultsAppRuntimePreferences.aiFormatterEnabledKey)
         let configStore = MockLLMConfigStore()
         configStore.config = .openai(apiKey: "sk-test")
@@ -159,8 +156,7 @@ final class AppEnvironmentTests: XCTestCase {
     }
 
     func testSyncAIFormatterAvailabilityDoesNotMigrateNewProviderOnSecondRun() {
-        let (suiteName, defaults) = makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let (_, defaults) = makeDefaults()
         let configStore = MockLLMConfigStore()
         configStore.config = .openai(apiKey: "sk-test")
 
@@ -184,8 +180,7 @@ final class AppEnvironmentTests: XCTestCase {
     }
 
     func testSyncAIFormatterAvailabilityMigratesLegacyExplicitTrueToDictationPreference() {
-        let (suiteName, defaults) = makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let (_, defaults) = makeDefaults()
         defaults.set(true, forKey: UserDefaultsAppRuntimePreferences.aiFormatterEnabledKey)
         let configStore = MockLLMConfigStore()
         configStore.config = .openai(apiKey: "sk-test")
@@ -206,8 +201,7 @@ final class AppEnvironmentTests: XCTestCase {
     }
 
     func testSyncAIFormatterAvailabilityPreservesExistingDictationPreference() {
-        let (suiteName, defaults) = makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let (_, defaults) = makeDefaults()
         defaults.set(true, forKey: UserDefaultsAppRuntimePreferences.aiFormatterEnabledKey)
         defaults.set(false, forKey: UserDefaultsAppRuntimePreferences.aiFormatterEnabledForDictationKey)
         let configStore = MockLLMConfigStore()
@@ -229,8 +223,7 @@ final class AppEnvironmentTests: XCTestCase {
     }
 
     func testSyncAIFormatterAvailabilityPreservesExistingTranscriptionPreference() {
-        let (suiteName, defaults) = makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let (_, defaults) = makeDefaults()
         defaults.set(false, forKey: UserDefaultsAppRuntimePreferences.aiFormatterEnabledForTranscriptionsKey)
         let configStore = MockLLMConfigStore()
         configStore.config = .openai(apiKey: "sk-test")
@@ -251,8 +244,7 @@ final class AppEnvironmentTests: XCTestCase {
     }
 
     func testSyncAIFormatterAvailabilityRemovesPreferenceWithoutProvider() {
-        let (suiteName, defaults) = makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let (_, defaults) = makeDefaults()
         defaults.set(true, forKey: UserDefaultsAppRuntimePreferences.aiFormatterEnabledKey)
         let configStore = MockLLMConfigStore()
 
@@ -269,7 +261,7 @@ final class AppEnvironmentTests: XCTestCase {
     }
 
     private func makeDefaults() -> (suiteName: String, defaults: UserDefaults) {
-        let suiteName = "AppEnvironmentTests-\(UUID().uuidString)"
+        let suiteName = makeIsolatedDefaultsSuite("AppEnvironmentTests-")
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         return (suiteName, defaults)
