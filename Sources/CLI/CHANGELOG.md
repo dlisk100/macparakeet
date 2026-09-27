@@ -94,6 +94,13 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 
 ## [Unreleased]
 
+## [5.0.0] — 2026-09-27 (bundled with MacParakeet 0.8.9)
+
+This major version removes Apple Intelligence analysis and Transform execution.
+Scripts using those requests must choose another provider. Apple Intelligence
+remains available for cleanup. The standalone Homebrew CLI has its own release
+channel.
+
 ### Changed
 
 - Explicit Apple Intelligence summary, chat, Ask, prompt-result, and Transform
