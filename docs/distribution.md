@@ -263,7 +263,7 @@ must report the promoted semver from `Sources/CLI/CHANGELOG.md`.
 
 ### Version bumping
 
-The next app candidate is **0.8.8**, continuing the 0.8.x release train.
+The current app release is **0.8.8**, continuing the 0.8.x release train.
 **0.9.0 is reserved for qualified, publicly enabled Jev Voice Control.**
 This deliberate milestone policy takes precedence over the generic guidance
 below. Voice Control remains release-gated; additive improvements to the

@@ -94,7 +94,9 @@ by checking exit code first: `2` = misuse, `1` = runtime, `0` = success.
 
 ## [Unreleased]
 
-## [4.9.0] — 2026-09-26 (development source; not a stable app release)
+## [4.9.0] — 2026-09-27 (bundled with MacParakeet 0.8.8)
+
+The standalone Homebrew CLI has its own release channel.
 
 ### Changed
 

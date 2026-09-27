@@ -28,7 +28,7 @@
 
 Ask is a default-off development workspace with its shared native/CLI semantics documented
 in the [Ask workspace contract](contracts/ask-workspace.md) and governed by
-[ADR-034](adr/034-meeting-ask-workspace.md). It is not part of the stable 0.8.7
+[ADR-034](adr/034-meeting-ask-workspace.md). It is not part of the stable 0.8.8
 DMG. Debug app and CLI builds require `--enable-ask-workspace`; release builds
 ignore this opt-in. Model and native qualification are required before enabling it.
 
@@ -93,15 +93,15 @@ These decisions are final. Do not second-guess them.
 > Canonical release-status block for agents and docs. Update this section when
 > release channel framing changes or an `AppFeatures` flag flips.
 
-The next candidate is **0.8.8**. **0.9.0** is reserved for qualified, publicly
-enabled Jev Voice Control; its current release gate stays off. This is a
-candidate version policy, not a publication announcement. The public CLI is
-versioned separately under its own compatibility policy.
+The current stable app release is **0.8.8**. **0.9.0** is reserved for qualified,
+publicly enabled Jev Voice Control; its release gate stays off. The public CLI
+is versioned separately under its own compatibility policy; app 0.8.8 bundles
+CLI 4.9.0. The standalone Homebrew CLI remains a separate release channel.
 
 | Channel | Status | Notes |
 |---------|--------|-------|
-| Stable DMG `0.8.7` | User-facing release, recommended for normal use | Hold-to-talk restored when the microphone is already granted, Fn admitted with Caps Lock latched, hold-to-talk overlay keeps 16pt while cancelled/Undo is 7pt, dictation, file/media URL transcription, System Default microphone routing, separate live/final speech-engine routes, meeting recording with cleaned-mic finalization, independent source startup, and bounded capture lifecycle, calendar auto-start and activity-based auto-stop (both opt-in, default off), per-event calendar skip, start-meetings-muted (default off), Microsoft 365/Exchange calendar setup, meeting import and split, live transcription during recording (default on), timed transcript corrections, isolated speaker-assignment smoothing, Seed of Life library covers when a recording has no thumbnail, Clean English “um” stripping (Portuguese/German opt-out), optional preserved discarded dictations, Transcribe tile no longer sticks on Wrapping up after stop (status label only), skip-microphone onboarding for file-only users, AI Formatter off by default with separate dictation and transcript prompts, optional streaming-cursor dictation insert (default off), China-lab LLM providers, Sonoma Parakeet encoder off ANE, Transforms, VAD-guided meeting live-preview chunking, optional Nemotron Beta, Cohere, and WhisperKit, bundled CLI 4.4.0, exports, vocabulary, AI features |
-| Development source (this revision) | Unreleased; `main` and feature branches are not the stable download | Since 0.8.7, this source adds four-step onboarding with practice dictation, new dictation shortcuts and controls, menu-bar Transforms, reading-view transcript edits, Apple Intelligence, prompt routing, vocabulary replace-all, an Orukeet preview, and the default-off Ask workspace. The CLI source version is 4.8.0; neither it nor Ask changes the stable app release. Experimental Voice Control remains disabled in release builds. Voice profiles and encrypted share links also remain gated off. See [Sources/CLI/CHANGELOG.md](../Sources/CLI/CHANGELOG.md) for CLI version history. Check branch/commit identity; do not attribute these changes to the stable DMG. |
+| Stable DMG `0.8.8` | User-facing release, recommended for normal use | Dictation, file/media URL transcription and meeting recording; failed-dictation retry, Fn and rapid-restart fixes, optional capture sounds and AI-polish shortcut, dictation-only spoken punctuation, faster Library browsing, reading-view transcript corrections, editable saved AI results, in-place regeneration, safer saves/imports/recovery, Library prompt management, separate cleanup/analysis AI routes, optional Apple Intelligence, expanded AI-result language picker, menu-bar Transforms, four-step onboarding, optional Orukeet preview, Nemotron automatic speaker detection, vocabulary replace-all, and bundled CLI 4.9.0. See [0.8.8 release notes](../docs/releases/0.8.8/github.md) for requirements and model limitations. Existing calendar, capture, export, and retention features remain available. |
+| Development source (this revision) | `main` and feature branches can advance beyond the stable download | The 0.8.8 release is tagged at `b5265269f70db5c10832e27ab78ede402ca57a51`; later documentation commits do not change its signed binaries. Ask and Voice Control remain disabled in release builds. Voice profiles, encrypted share links and in-process MLX remain gated off. Check branch/commit identity and the [CLI changelog](../Sources/CLI/CHANGELOG.md) before attributing later source changes to a published app. |
 
 Feature gates in the current source (`Sources/MacParakeetCore/AppFeatures.swift`); an implemented gated surface is not a shipped feature:
 
@@ -189,7 +189,7 @@ The [meeting import v1 contract](contracts/meeting-import-v1.md) defines the sha
 | v0.5 | Data, UI & Prompts | Private dictation, favorites, video player, split-pane detail, library grid, prompt library, multi-summary | **Implemented** |
 | v0.6 | Meeting Recording + Multilingual STT + Transforms | System audio + mic capture, concurrent with dictation, local transcription, VAD-guided live-preview chunking, library integration, optional Nemotron Beta and WhisperKit engines, system-wide selected-text rewrites, calendar auto-start | **Implemented** |
 | v0.7 | Post-v0.6 polish | Activity-based auto-stop (ADR-023, per-user default off), meeting reliability (ADR-025 Phase A behind a default-on kill switch), activity-based detection groundwork (ADR-024 Phases A+B behind a default-off flag), optional Cohere Transcribe, display-only live dictation transcript preview, meeting echo-cancellation/cleaned-mic artifacts, meeting audio N-day retention, System Default microphone-routing repair, split live/final speech-engine routes, bounded meeting-capture lifecycle, CLI 3.0, developer-gated local MLX groundwork, and follow-up polish | **Implemented** |
-| v0.8 | Library, meetings, and transcript workflow | Meeting import and split, timed transcript corrections, live transcription toggle, independent capture-source startup, per-event calendar skip, start-meetings-muted, Microsoft 365/Exchange calendar setup, labels and Library layouts, Seed of Life covers, Clean English “um” stripping, optional preserved discarded dictations, skip-microphone onboarding, AI Formatter default-off with split prompts, optional streaming-cursor insert, China-lab LLM providers, Sonoma encoder off ANE, hold-to-talk restore, Caps Lock+Fn, overlay inset split, DAPT export, CLI 4.4.0, and capture/recovery hardening | **Implemented; stable 0.8.7** |
+| v0.8 | Library, meetings, and transcript workflow | Meeting import and split, timed transcript corrections, live transcription toggle, independent capture-source startup, per-event calendar skip, start-meetings-muted, Microsoft 365/Exchange calendar setup, labels and Library layouts, Seed of Life covers, Clean English “um” stripping, optional preserved discarded dictations, skip-microphone onboarding, AI Formatter default-off with split prompts, optional streaming-cursor insert, China-lab LLM providers, Sonoma encoder off ANE, hold-to-talk restore, Caps Lock+Fn, overlay inset split, DAPT export, CLI 4.9.0, and capture/recovery hardening | **Implemented; stable 0.8.8** |
 
 ## Version Progress
 
@@ -362,9 +362,9 @@ Calendar-related code is implemented and **enabled** (`AppFeatures.calendarEnabl
 - [x] Local Transform history with input/output/source-app/timing stored in `transform_history`
 - [x] CLI `transforms` and `transforms history` command trees for headless provisioning and verification
 
-### v0.8 Library, meetings, and transcript workflow (Implemented; stable 0.8.7)
+### v0.8 Library, meetings, and transcript workflow (Implemented; stable 0.8.8)
 
-Shipped across 0.8.0–0.8.7. Feature detail lives in [spec/02-features.md](02-features.md); this list is the release-train summary, not a second checklist.
+Shipped across 0.8.0–0.8.8. Feature detail lives in [spec/02-features.md](02-features.md); this list is the release-train summary, not a second checklist.
 
 - [x] Meeting import and split, with matching public CLI 4.1+ commands
 - [x] Timed transcript corrections with Undo/Redo across display, playback, retrieval, exports, and AI

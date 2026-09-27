@@ -1,12 +1,14 @@
-# 0.8.8 release preparation
+# MacParakeet 0.8.8
 
-These are unpublished drafts for the next app release. They do not change the stable version, publish a tag, or update the public download/feed.
+Published on September 27, 2026: [GitHub release](https://github.com/moona3k/macparakeet/releases/tag/v0.8.8).
 
-- [GitHub release body](github.md): full user-facing notes since v0.8.7, including compatibility and optional-feature limits.
-- [Sparkle description](sparkle.html): standalone HTML for the newest appcast item, suitable for users skipping versions.
+- [GitHub release body](github.md): user-facing changes since 0.8.7, requirements, and model limitations.
+- [Sparkle description](sparkle.html): the standalone description in the 0.8.8 update-feed item.
 
-The public stable release remains v0.8.7. The `v0.8.8` tag/release links in these drafts are deliberate publication targets and will not resolve until release.
+The signed app is built from `b5265269f70db5c10832e27ab78ede402ca57a51`, build `20260927133245`, and bundles CLI 4.9.0. Later release-documentation commits do not change the binaries.
 
-The local package under this checkout's ignored `dist/` directory will carry the exact source revision, build timestamp, signed/notarized app and DMG, SHA-256 checksums, Sparkle signature, appcast draft, and verification evidence. Those values must come from the final artifact; never copy them from an earlier candidate.
+The canonical DMG is 179,989,495 bytes with SHA-256 `bd52e0a9e88f9ff7405fc922920335924c7a84255c8b73289662cbf9af8fe6cc`. GitHub's `MacParakeet.dmg` asset and the cache-busted Sparkle enclosure must contain these exact bytes. App and DMG notarization were Accepted, signing/stapling/Gatekeeper checks passed, and the packaged Parakeet transcription/readback/export smoke passed.
 
-Before publication, require final-candidate CI and artifact checks and review the remaining physical/upgrade qualification results. Keep existing appcast items and prepend the new item. Do not upload a different DMG after computing its signature or checksum. Publication is a separate user decision.
+The user authorized publication after reviewing the local candidate. Automated evidence does not establish physical microphone/Bluetooth/macOS 27 behavior or an actual Sparkle upgrade; those previously identified qualification limits remain distinct from the published-artifact checks.
+
+Canonical current release and feature-gate status lives in [the spec index](../../../spec/README.md#release-channels-and-feature-flags). The standalone Homebrew CLI has a separate release channel.
