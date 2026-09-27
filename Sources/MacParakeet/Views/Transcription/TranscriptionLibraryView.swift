@@ -872,7 +872,7 @@ struct TranscriptionLibraryView: View {
 
     private func runBulkExport() {
         guard !isBulkExportActionDisabled else { return }
-        let targets = selectedBulkExportTargets
+        let selection = selectedBulkExportTargets
 
         cancelBulkExport()
         let outcome = runBulkExportFolderPanel()
@@ -897,6 +897,10 @@ struct TranscriptionLibraryView: View {
                 await Task.yield()
                 guard bulkExportRunID == runID, !Task.isCancelled else { return }
 
+                // Library rows omit timing data; exports need complete rows.
+                let targets = try await viewModel.loadForExport(selection)
+                guard bulkExportRunID == runID, !Task.isCancelled else { return }
+
                 let exportTask = Task.detached(priority: .userInitiated) {
                     try await TranscriptResultActions.exportTranscriptsToDirectory(
                         transcriptions: targets,
@@ -912,6 +916,7 @@ struct TranscriptionLibraryView: View {
                 } onCancel: {
                     exportTask.cancel()
                 }
+                .includingUnavailable(selection.count - targets.count)
                 guard bulkExportRunID == runID else { return }
                 bulkExportWorkerTask = nil
 

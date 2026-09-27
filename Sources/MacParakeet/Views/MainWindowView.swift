@@ -169,8 +169,10 @@ struct MainWindowView: View {
                                 settingsViewModel.requestPendingMeetingRecovery()
                             },
                             onSelectMeeting: { transcription in
-                                transcriptionViewModel.currentTranscription = transcription
-                                state.navigateToTranscription(from: .meetings)
+                                state.openTranscription(from: .meetings, in: transcriptionViewModel) {
+                                    await meetingsWorkspaceViewModel.recentMeetingsViewModel.loadForOpening(
+                                        transcription)
+                                }
                             }
                         )
                     case .library:
@@ -232,7 +234,9 @@ struct MainWindowView: View {
                                     state.navigateToAsk()
                                 }
                             ) { transcription in
-                                transcriptionViewModel.currentTranscription = transcription
+                                state.openTranscription(from: .library, in: transcriptionViewModel) {
+                                    await libraryViewModel.loadForOpening(transcription)
+                                }
                             }
                         }
                     case .ask:
