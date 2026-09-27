@@ -83,7 +83,7 @@ The current implementation does not flatten every provider into one wire protoco
 - **OpenAI, Gemini, OpenRouter, Moonshot, DeepSeek, Qwen, Z.AI, MiniMax, and LM Studio** use the OpenAI-compatible chat completions API (`POST /chat/completions` off each provider's configured base URL).
 - **Local CLI** is not HTTP at all; prompts are passed to a subprocess via stdin/environment.
 - **Local MLX** is in-process through `InProcessLLMClient` and `LocalLLMRuntime`; the concrete MLX target is compiled only for gated app builds.
-- **Apple Intelligence** is on-device through `AppleIntelligenceLLMClient` and `FoundationModels` on macOS 26+. It is user-selected, never auto-defaulted, and uses a dedicated ~12k-character budget for short answers (~6k when the reply is about as long as the input). The option is hidden on ineligible Macs and older OS versions. When the Mac is eligible and Apple Intelligence is off, Settings mentions it and can open System Settings without selecting the provider.
+- **Apple Intelligence** is on-device through `AppleIntelligenceLLMClient` and `FoundationModels` on macOS 26+. It is offered only for the Dictation & cleanup route (`LLMProviderID.canServe(_:)`), never as Default AI or for Meetings & library, and uses a dedicated ~12k-character budget for short answers (~6k when the reply is about as long as the input). The option is hidden on ineligible Macs and older OS versions.
 
 Streaming is provider-specific under the hood:
 
@@ -135,7 +135,7 @@ account-specific model IDs rather than a public catalog.
 
 **Local CLI:** Users with Claude Code or Codex subscriptions can use their CLI tools directly. The app runs the configured command as a subprocess via `posix_spawn`, delivering prompts via stdin and `MACPARAKEET_*` environment variables. No API key needed — the CLI tool manages its own authentication. Built-in presets for Claude Code (`claude -p --model haiku`) and Codex (`codex exec --model gpt-5.4-mini`), or any custom command. See PR #47.
 
-**Apple Intelligence:** On macOS 26 Tahoe or later, eligible Macs can use the on-device Foundation Models ~3B system model with no API key and no MacParakeet download. The user must enable Apple Intelligence in System Settings; MacParakeet does not auto-select this provider. The 4096-token window is a poor fit for full meeting summaries; Transforms, dictation cleanup, and short Ask turns are the intended workloads. The dedicated ~12k-character input budget is English-calibrated (~3.5 chars/token with output reserve). Prompt max tokens stop at the largest value that still leaves input room (3428 on that 12k budget). Rewrite-shaped work uses ~6k so the answer can be about as long as the source. Transforms stay in that budget by middle-truncating longer English text with the same marker as other providers. The AI Formatter (dictation cleanup and transcription AI formatting) shares the ~6k budget but never truncates; an oversized request fails and falls back to deterministic cleanup instead (see [spec/07-text-processing.md](07-text-processing.md#optional-ai-formatting)). The 12k ceiling is calibrated for ordinary English prose. Dense dictation, timestamped transcripts, and CJK can still overflow it and surface as a context-limit error rather than silent chunking. Inline CLI accepts `--provider appleIntelligence`. See issue #1062.
+**Apple Intelligence:** On macOS 26 Tahoe or later, eligible Macs can use the on-device Foundation Models ~3B system model with no API key and no MacParakeet download. The user must enable Apple Intelligence in System Settings; MacParakeet does not auto-select this provider. The 4096-token window holds the input and the answer together, so it serves the cleanup route only: a summary, chat, or card over a meeting-length transcript would see only a fraction of it (timestamped, speaker-labeled transcripts measure about 2.8-3.2 characters per token). Settings offers it only in the Dictation & cleanup row; `llm routes set analysis` rejects it; and the app clears a saved Apple Intelligence default or analysis route at launch (saved API keys are kept). The AI Formatter (dictation cleanup and transcription AI formatting) uses an English-calibrated ~6k-character round-trip budget so the answer can be about as long as the source. It never truncates; an oversized request fails and falls back to deterministic cleanup instead (see [spec/07-text-processing.md](07-text-processing.md#optional-ai-formatting)). Inline CLI requests follow the same cleanup-only policy: summaries, chat, prompt results, knowledge cards, and Transforms reject Apple Intelligence before generation, including streaming requests. See issue #1062.
 
 ### OpenCode Go (custom endpoint)
 
@@ -503,7 +503,7 @@ concise summary that captures the key points, decisions, and action items.
 Use bullet points for clarity. Keep the summary under 500 words.
 ```
 
-**Context assembly:** Full transcript text. If transcript exceeds the context budget, truncate from the middle with an ellipsis marker, preserving the head and tail within the limit. Truncation snaps to word boundaries to avoid slicing multi-byte Unicode. The transcript budget accounts for the rendered summary system prompt so the combined request stays inside the provider budget; if a custom prompt has already rendered transcript text into the system prompt, that rendered prompt is bounded too. **Budget:** 500,000 characters for cloud providers, 80,000 characters for most local providers (`isLocal == true`), 12,000 characters for Apple Intelligence (the on-device window is 4096 tokens), and 8,000 characters for LM Studio because its effective context depends on the model loaded in the desktop server.
+**Context assembly:** Full transcript text. If transcript exceeds the context budget, truncate from the middle with an ellipsis marker, preserving the head and tail within the limit. Truncation snaps to word boundaries to avoid slicing multi-byte Unicode. The transcript budget accounts for the rendered summary system prompt so the combined request stays inside the provider budget; if a custom prompt has already rendered transcript text into the system prompt, that rendered prompt is bounded too. **Budget:** 500,000 characters for cloud providers, 80,000 characters for most local providers (`isLocal == true`), and 8,000 characters for LM Studio because its effective context depends on the model loaded in the desktop server. Apple Intelligence is cleanup-only and is rejected for summary generation before context assembly.
 
 **Meeting notes for result prompts:** Result
 prompts carry an `includeMeetingNotes` opt-in, false by default. At enqueue,
@@ -642,9 +642,19 @@ Failed Save or Clear keeps the working configuration and reports an error
 without notifying consumers or resetting formatter preferences. Successful
 transitions update the view model's committed state before notifying consumers.
 
-Clear removes the saved provider, not every remembered provider setup. It deletes
+Clear (and Save with no default or task provider selected) removes the saved routes, not every
+remembered provider setup. Saved provider API keys stay in the Keychain, as they
+do when switching providers, so choosing a provider again does not ask for its
+key again. **Default AI = None** leaves tasks without an override disabled; explicit task
+routes can be saved independently. In particular, Apple Intelligence cleanup
+requires no other provider. Formatter availability follows the saved cleanup
+route, while summaries and Transforms follow analysis and transform respectively.
+**Remove saved key** under the key field deletes it once no saved
+route uses that provider. Clear deletes
 Local CLI command settings only when the saved provider can be identified as
-Local CLI, and preserves inactive providers' settings and credentials. If saved
+Local CLI, and preserves inactive providers' settings. A key typed but not yet
+saved survives switching to another provider and back within the same
+Settings session. If saved
 provider metadata is unreadable, Clear removes that metadata without guessing
 ownership of the remaining provider-specific settings. Selecting a remembered
 Local CLI draft afterward does not reactivate AI; the user must explicitly Save.

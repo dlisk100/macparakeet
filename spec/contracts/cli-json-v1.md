@@ -238,6 +238,12 @@ still apply.
   opens. Reloading that recording cannot replace the editor's original baseline
   with a newer CLI edit; a conflicting save keeps the draft without overwriting
   the current result.
+- Task overrides may exist without a default provider. In that state the
+  default and unconfigured inherited tasks report `configured:false`, while an
+  explicit cleanup or analysis route reports `configured:true` and
+  `inherited:false`. `llm routes reset` returns an unconfigured route if there
+  is no default. Apple Intelligence is accepted for `cleanup` only by
+  `llm routes set`; analysis selection fails validation before persistence.
 - `llm routes list --json` returns `{ok:true,routes:[...]}`. Each entry has
   `task` (`default`, `cleanup`, `analysis`, `transform`), `inherited` and
   `configured`; configured entries also include `provider`, `model`, `isLocal`
@@ -247,6 +253,12 @@ still apply.
   descriptions do not read Keychain. Set accepts the
   inline provider options but saves a task override instead of making an LLM
   request; when `--model` is omitted it uses the provider's current GUI default.
+  Apple Intelligence can serve only `cleanup`; setting an `analysis` override
+  with `--provider appleIntelligence` fails validation before credentials or
+  route metadata are changed.
+  Explicit inline Apple Intelligence requests for summaries, chat, Ask, and Transforms
+  also fail before dispatch through the shared service, including streams. They
+  use the existing runtime-error envelope and exit code 1.
   Explicit models and custom-provider model requirements remain unchanged;
   one-off inline commands keep their historical compatibility defaults.
   Reset removes only that override. Explicit credential flags win,
@@ -255,8 +267,8 @@ still apply.
   to every route using that provider. Local CLI reuses the configured shared
   template and rejects a different `--command`. A running GUI may cache
   configuration until refreshed or relaunched. `configured` describes saved
-  route configuration, not app readiness: the app still requires Default AI to
-  be configured in Settings. An already-open AI Settings draft can overwrite CLI
+  route configuration, not provider reachability. App availability is determined
+  per task route; Default AI may be None when an explicit task route is configured. An already-open AI Settings draft can overwrite CLI
   changes when saved; close it before CLI mutations and reopen afterward.
   GUI model selection conditionally updates the route it displayed and refreshes
   instead of applying a stale choice to a concurrently changed route. Route

@@ -53,16 +53,11 @@ struct LLMSettingsView: View {
 
             selectedAIOptionSection
 
-            if viewModel.selectedProviderID != nil {
-                Divider()
-                taskRouteSection
+            Divider()
+            taskRouteSection
 
-                if viewModel.selectedProviderID != .appleIntelligence,
-                    viewModel.cleanupOverrideProviderID == .appleIntelligence
-                        || viewModel.analysisOverrideProviderID == .appleIntelligence
-                {
-                    appleIntelligenceStatusSection
-                }
+            if viewModel.cleanupOverrideProviderID == .appleIntelligence {
+                appleIntelligenceStatusSection
             }
 
             if viewModel.shouldShowInProcessLocalSetup {
@@ -93,9 +88,18 @@ struct LLMSettingsView: View {
                             .foregroundStyle(.secondary)
                         }
                         Spacer(minLength: DesignSystem.Spacing.md)
-                        SecureField(viewModel.apiKeyPlaceholder, text: $viewModel.apiKeyInput)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 220)
+                        VStack(alignment: .trailing, spacing: 4) {
+                            SecureField(viewModel.apiKeyPlaceholder, text: $viewModel.apiKeyInput)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 220)
+                            if viewModel.canRemoveSavedAPIKey {
+                                Button("Remove saved key") {
+                                    viewModel.removeSavedAPIKey()
+                                }
+                                .parakeetAction(.secondary)
+                                .font(DesignSystem.Typography.caption)
+                            }
+                        }
                     }
 
                     Divider()
@@ -103,8 +107,6 @@ struct LLMSettingsView: View {
 
                 if viewModel.selectedProviderID == .localCLI {
                     cliSettingsSection
-                } else if viewModel.selectedProviderID == .appleIntelligence {
-                    appleIntelligenceStatusSection
                 } else {
                     if viewModel.selectedProviderID?.requiresCustomEndpoint == true {
                         HStack(alignment: .top) {
@@ -167,10 +169,6 @@ struct LLMSettingsView: View {
 
                 Divider()
 
-                privacyInfo
-
-                Divider()
-
                 // Test connection + status
                 HStack(spacing: DesignSystem.Spacing.sm) {
                     Button("Test Connection") {
@@ -183,23 +181,24 @@ struct LLMSettingsView: View {
 
                     Spacer()
                 }
+            }
 
-                if let validationMessage = viewModel.validationMessage {
-                    HStack(spacing: 4) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(DesignSystem.Colors.warningAmber)
-                        Text(validationMessage)
-                            .font(DesignSystem.Typography.caption)
-                            .foregroundStyle(DesignSystem.Colors.warningAmber)
-                    }
+            if let validationMessage = viewModel.validationMessage {
+                Text(validationMessage)
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(DesignSystem.Colors.warningAmber)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                }
             }
 
             Divider()
 
             configurationActionsRow
+
+            if viewModel.selectedProviderID != nil || viewModel.cleanupOverrideProviderID != nil
+                || viewModel.analysisOverrideProviderID != nil || viewModel.isConfigured
+            {
+                privacyInfo
+            }
 
             Divider()
 
@@ -256,7 +255,7 @@ struct LLMSettingsView: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("AI for summaries, chat, meeting Ask, and Transforms")
+                Text("AI task availability")
                     .font(DesignSystem.Typography.body.weight(.semibold))
                     .foregroundStyle(DesignSystem.Colors.textPrimary)
                 Text(setupStatusCopy(for: status))
@@ -268,7 +267,7 @@ struct LLMSettingsView: View {
             Spacer(minLength: DesignSystem.Spacing.md)
 
             if case .ready = status {
-                Text("Ready")
+                Text("Configured")
                     .font(DesignSystem.Typography.caption.weight(.medium))
                     .foregroundStyle(DesignSystem.Colors.successGreen)
                     .padding(.horizontal, 8)
@@ -284,22 +283,32 @@ struct LLMSettingsView: View {
                 title: "Dictation & cleanup",
                 detail: "Formatter for dictation and transcripts.",
                 provider: $viewModel.cleanupOverrideProviderID,
-                model: $viewModel.cleanupModelName
+                model: $viewModel.cleanupModelName,
+                providers: viewModel.cleanupProviderIDs
             )
             taskRouteRow(
                 title: "Meetings & library",
                 detail: "Summaries, Ask, and knowledge cards.",
                 provider: $viewModel.analysisOverrideProviderID,
-                model: $viewModel.analysisModelName
+                model: $viewModel.analysisModelName,
+                providers: providerOrder
             )
         }
+    }
+
+    /// Names what the task inherits, like the transcription engine's
+    /// `Same as Parakeet`, so the row previews the route it will use.
+    private var inheritedRouteLabel: String {
+        guard let provider = viewModel.selectedProviderID else { return "None" }
+        return "Same as \(provider.displayName)"
     }
 
     private func taskRouteRow(
         title: String,
         detail: String,
         provider: Binding<LLMProviderID?>,
-        model: Binding<String>
+        model: Binding<String>,
+        providers: [LLMProviderID]
     ) -> some View {
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
             HStack(alignment: .top) {
@@ -312,8 +321,8 @@ struct LLMSettingsView: View {
                 }
                 Spacer(minLength: DesignSystem.Spacing.md)
                 Picker(title, selection: provider) {
-                    Text("Use default AI").tag(LLMProviderID?.none)
-                    ForEach(providerOrder, id: \.self) { option in
+                    Text(inheritedRouteLabel).tag(LLMProviderID?.none)
+                    ForEach(providers, id: \.self) { option in
                         Text(option.displayName).tag(Optional(option))
                     }
                 }
@@ -334,10 +343,10 @@ struct LLMSettingsView: View {
         VStack(spacing: DesignSystem.Spacing.md) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Current choice")
+                    Text("Default AI")
                         .font(DesignSystem.Typography.body)
                     Text(
-                        "Choose on-device Apple Intelligence, a local provider, an API key, or a command-line AI tool."
+                        "Used unless a task below picks its own. Choose None to enable only specific tasks."
                     )
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.secondary)
@@ -364,18 +373,6 @@ struct LLMSettingsView: View {
                             .font(DesignSystem.Typography.caption)
                             .foregroundStyle(.secondary)
                     }
-                    if let offer = viewModel.appleIntelligenceOffer {
-                        Text(offer.message)
-                            .font(DesignSystem.Typography.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if let url = offer.settingsURL {
-                            Button("Open System Settings") {
-                                openAppleIntelligenceSettings(url)
-                            }
-                            .parakeetAction(.secondary)
-                        }
-                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -393,7 +390,7 @@ struct LLMSettingsView: View {
                     Text("On-device Apple Intelligence")
                         .font(DesignSystem.Typography.body.weight(.semibold))
                     Text(
-                        "Runs on this Mac and works best for short requests. Long meeting summaries may exceed its context window."
+                        "Runs on this Mac for dictation cleanup. Its context window is too small for meetings and summaries."
                     )
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.secondary)
@@ -725,8 +722,8 @@ struct LLMSettingsView: View {
         case .setUpNeeded:
             return
                 "Choose how MacParakeet should run AI features. Transcription, dictation, and meeting recording still work without this."
-        case .ready(let displayName):
-            return "Ready: using \(displayName)."
+        case .ready:
+            return viewModel.configuredTasksDescription
         case .cannotConnect(let displayName, let message):
             return "MacParakeet could not reach \(displayName): \(message)"
         }
@@ -909,9 +906,9 @@ struct LLMSettingsView: View {
                 .toggleStyle(.switch)
                 .font(DesignSystem.Typography.caption.weight(.medium))
                 .fixedSize()
-                .disabled(!viewModel.isConfigured)
+                .disabled(!viewModel.isAnalysisConfigured)
                 .help(
-                    viewModel.isConfigured
+                    viewModel.isAnalysisConfigured
                         ? "Generate a meeting title from the completed transcript."
                         : "Set up an AI provider to generate meeting titles."
                 )
@@ -2067,8 +2064,11 @@ struct LLMSettingsView: View {
 
     private var privacyInfo: some View {
         let hasPendingChanges = viewModel.hasUnsavedChanges
-        let taskOverrides = [viewModel.cleanupOverrideProviderID, viewModel.analysisOverrideProviderID].compactMap { $0 }
-        let allRoutesLocal = viewModel.isLocalConfiguration
+        let taskOverrides = [viewModel.cleanupOverrideProviderID, viewModel.analysisOverrideProviderID].compactMap {
+            $0
+        }
+        let allRoutesLocal =
+            (viewModel.selectedProviderID == nil || viewModel.isLocalConfiguration)
             && taskOverrides.allSatisfy { provider in
                 provider == viewModel.selectedProviderID ? viewModel.isLocalConfiguration : provider.isLocal
             }
@@ -2098,8 +2098,7 @@ struct LLMSettingsView: View {
                     hasPendingChanges: hasPendingChanges,
                     allRoutesLocal: allRoutesLocal,
                     isCLI: isCLI,
-                    usesInsecureHTTP: usesInsecureHTTP,
-                    isAppleIntelligence: viewModel.selectedProviderID == .appleIntelligence && taskOverrides.isEmpty
+                    usesInsecureHTTP: usesInsecureHTTP
                 )
             )
             .font(DesignSystem.Typography.caption)
@@ -2117,25 +2116,23 @@ struct LLMSettingsView: View {
         hasPendingChanges: Bool,
         allRoutesLocal: Bool,
         isCLI: Bool,
-        usesInsecureHTTP: Bool,
-        isAppleIntelligence: Bool
+        usesInsecureHTTP: Bool
     ) -> String {
         if hasPendingChanges {
-            return "Route changes apply after Save. Until then, AI actions use the last saved configuration, which may send transcript text off this Mac."
-        }
-        if isAppleIntelligence {
             return
-                "Transcript text stays on this Mac. Apple Intelligence runs on-device and does not send it to the cloud."
+                "Route changes apply after Save. Until then, AI actions use the last saved configuration, which may send transcript text off this Mac."
         }
         if isCLI {
-            return "AI actions use the provider selected for each task. Local CLI commands may contact their own service."
+            return
+                "AI actions use the provider selected for each task. Local CLI commands may contact their own service."
         }
         if allRoutesLocal {
             return usesInsecureHTTP
                 ? "AI actions send transcript text only to selected local endpoints over HTTP. Use a trusted network."
                 : "AI actions send transcript text only to selected local AI routes."
         }
-        return "Transcription stays local. AI actions use the provider selected for each task; cloud routes send transcript text off this Mac."
+        return
+            "Transcription stays local. AI actions use the provider selected for each task; cloud routes send transcript text off this Mac."
     }
 
     private var configurationActionsRow: some View {
@@ -2230,4 +2227,3 @@ struct LLMSettingsView: View {
         }
     }
 }
-

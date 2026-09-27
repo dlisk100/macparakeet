@@ -51,55 +51,103 @@ final class LLMSettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.transcriptAIContextMode, .richTranscript)
     }
 
-    func testAppleIntelligenceOfferAppearsOnlyBeforeAChoiceOnAnEligibleMac() {
-        let turnOn = LLMSettingsViewModel.appleIntelligenceOffer(
-            availability: .appleIntelligenceNotEnabled,
-            selectedProviderID: nil
+    func testAppleIntelligenceIsOfferedOnlyForCleanup() {
+        viewModel = LLMSettingsViewModel(
+            defaults: defaults,
+            appleIntelligenceAvailabilityProvider: { .available }
         )
-        XCTAssertEqual(
-            turnOn?.message,
-            "This Mac can run Apple Intelligence on device. Turn it on in System Settings, then choose it here."
-        )
-        XCTAssertEqual(
-            turnOn?.settingsURL,
-            AppleIntelligenceAvailability.appleIntelligenceNotEnabled.settingsURL
-        )
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
 
-        let preparing = LLMSettingsViewModel.appleIntelligenceOffer(
-            availability: .modelNotReady,
-            selectedProviderID: nil
-        )
+        XCTAssertFalse(viewModel.selectableProviderIDs.contains(.appleIntelligence))
+        XCTAssertTrue(viewModel.cleanupProviderIDs.contains(.appleIntelligence))
         XCTAssertEqual(
-            preparing?.message,
-            "Apple Intelligence is downloading on this Mac. Choose it here when it's ready."
+            viewModel.cleanupProviderIDs.filter { $0 != .appleIntelligence },
+            viewModel.selectableProviderIDs
         )
-        XCTAssertNil(preparing?.settingsURL)
+    }
 
-        for availability in [
-            AppleIntelligenceAvailability.unsupported,
-            .deviceNotEligible,
-            .available,
-            .localeLimited,
-        ] {
-            XCTAssertNil(
-                LLMSettingsViewModel.appleIntelligenceOffer(
-                    availability: availability,
-                    selectedProviderID: nil
-                )
-            )
-        }
-        XCTAssertNil(
-            LLMSettingsViewModel.appleIntelligenceOffer(
-                availability: .appleIntelligenceNotEnabled,
-                selectedProviderID: .appleIntelligence
-            )
-        )
-        XCTAssertNil(
-            LLMSettingsViewModel.appleIntelligenceOffer(
-                availability: .appleIntelligenceNotEnabled,
-                selectedProviderID: .ollama
-            )
-        )
+    func testAppleOnlyCleanupCanBeSavedReopenedAndCleared() throws {
+        let store = LLMConfigStore(
+            preferencesDomain: defaultsSuiteName, lockURL: routeLockURL, keychain: InMemoryKeyValueStore())
+        viewModel = LLMSettingsViewModel(defaults: defaults, appleIntelligenceAvailabilityProvider: { .available })
+        viewModel.configure(configStore: store, llmClient: mockClient)
+        viewModel.cleanupOverrideProviderID = .appleIntelligence
+        XCTAssertNil(viewModel.selectedProviderID)
+        XCTAssertTrue(viewModel.canSave)
+        XCTAssertFalse(viewModel.isAIFormatterAvailable)
+
+        viewModel.saveConfiguration()
+
+        XCTAssertEqual(viewModel.saveState, .saved)
+        XCTAssertTrue(viewModel.isConfigured)
+        XCTAssertFalse(viewModel.isAnalysisConfigured)
+        XCTAssertTrue(viewModel.isAIFormatterAvailable)
+        XCTAssertNil(viewModel.aiFormatterUnavailableReason)
+        XCTAssertFalse(viewModel.hasUnsavedChanges)
+        XCTAssertEqual(viewModel.setupStatus, .ready(displayName: "Apple Intelligence"))
+        XCTAssertEqual(
+            viewModel.configuredTasksDescription,
+            "Dictation & cleanup: Apple Intelligence. Meetings & library: Off. Transforms: Off.")
+        XCTAssertEqual(try store.loadConfig(for: .cleanup)?.id, .appleIntelligence)
+        XCTAssertNil(try store.loadConfig(for: .analysis))
+        XCTAssertNil(try store.loadConfig(for: .transform))
+        XCTAssertTrue(defaults.bool(forKey: UserDefaultsAppRuntimePreferences.aiFormatterEnabledKey))
+
+        let reopened = LLMSettingsViewModel(defaults: defaults, appleIntelligenceAvailabilityProvider: { .available })
+        reopened.configure(configStore: store, llmClient: mockClient)
+        XCTAssertNil(reopened.selectedProviderID)
+        XCTAssertEqual(reopened.cleanupOverrideProviderID, .appleIntelligence)
+        XCTAssertTrue(reopened.isAIFormatterAvailable)
+        XCTAssertFalse(reopened.hasUnsavedChanges)
+        reopened.aiFormatterPrompt = "Polish: \(AIFormatter.transcriptPlaceholder)"
+        XCTAssertEqual(
+            defaults.string(forKey: UserDefaultsAppRuntimePreferences.aiFormatterPromptKey), reopened.aiFormatterPrompt)
+
+        reopened.clearConfiguration()
+        XCTAssertFalse(reopened.isConfigured)
+        XCTAssertFalse(reopened.isAIFormatterAvailable)
+        XCTAssertNil(try store.loadConfig(for: .cleanup))
+        XCTAssertFalse(defaults.bool(forKey: UserDefaultsAppRuntimePreferences.aiFormatterEnabledKey))
+    }
+
+    func testStandaloneCloudRouteRequiresSavedCredentialsBeforeSave() throws {
+        let store = LLMConfigStore(
+            preferencesDomain: defaultsSuiteName, lockURL: routeLockURL, keychain: InMemoryKeyValueStore())
+        viewModel.configure(configStore: store, llmClient: mockClient)
+        viewModel.analysisOverrideProviderID = .openai
+        XCTAssertFalse(viewModel.canSave)
+        XCTAssertEqual(
+            viewModel.validationMessage,
+            LLMSettingsDraft.ValidationError.taskOverrideUnavailable.localizedDescription)
+
+        try store.saveConfig(.openai(apiKey: "saved-key"))
+        try store.deleteConfig()
+        XCTAssertTrue(viewModel.canSave)
+        XCTAssertNil(viewModel.validationMessage)
+        viewModel.saveConfiguration()
+        XCTAssertEqual(viewModel.saveState, .saved)
+        XCTAssertNil(try store.loadConfig())
+        XCTAssertEqual(try store.loadConfig(for: .analysis)?.id, .openai)
+        XCTAssertEqual(
+            viewModel.configuredTasksDescription,
+            "Dictation & cleanup: Off. Meetings & library: OpenAI. Transforms: Off.")
+    }
+
+    func testRemovingDefaultKeepsExplicitCleanupAndSavedCredentials() throws {
+        let store = LLMConfigStore(
+            preferencesDomain: defaultsSuiteName, lockURL: routeLockURL, keychain: InMemoryKeyValueStore())
+        try store.saveConfiguration(
+            .gemini(apiKey: "saved-key"), cleanupOverride: .appleIntelligence(), analysisOverride: nil)
+        viewModel.configure(configStore: store, llmClient: mockClient)
+        viewModel.selectedProviderID = nil
+        viewModel.saveConfiguration()
+
+        XCTAssertEqual(viewModel.saveState, .saved)
+        XCTAssertNil(try store.loadConfig())
+        XCTAssertEqual(try store.loadConfig(for: .cleanup)?.id, .appleIntelligence)
+        XCTAssertEqual(try store.loadAPIKey(for: .gemini), "saved-key")
+        XCTAssertTrue(viewModel.isAIFormatterAvailable)
+        XCTAssertFalse(viewModel.hasUnsavedChanges)
     }
 
     func testUnavailableAppleIntelligenceTaskRouteDoesNotReportReady() {
@@ -110,12 +158,12 @@ final class LLMSettingsViewModelTests: XCTestCase {
         viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
         viewModel.selectedProviderID = .openai
         viewModel.apiKeyInput = "test-key"
-        viewModel.analysisOverrideProviderID = .appleIntelligence
+        viewModel.cleanupOverrideProviderID = .appleIntelligence
 
         viewModel.saveConfiguration()
 
         XCTAssertEqual(mockConfigStore.config?.id, .openai)
-        XCTAssertEqual(mockConfigStore.taskOverrides[.analysis]?.id, .appleIntelligence)
+        XCTAssertEqual(mockConfigStore.taskOverrides[.cleanup]?.id, .appleIntelligence)
         XCTAssertEqual(
             viewModel.setupStatus,
             .cannotConnect(
@@ -562,6 +610,110 @@ final class LLMSettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.apiKeyInput, "")
         XCTAssertEqual(viewModel.connectionTestState, .idle)
         XCTAssertFalse(viewModel.isConfigured)
+    }
+
+    func testTurningAIOffKeepsSavedKeyForReselection() throws {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .gemini
+        viewModel.apiKeyInput = "gemini-key"
+        viewModel.saveConfiguration()
+        XCTAssertEqual(viewModel.saveState, .saved)
+
+        // Choosing None and saving turns AI off; it must not forget the key.
+        viewModel.selectedProviderID = nil
+        viewModel.saveConfiguration()
+        XCTAssertNil(mockConfigStore.config)
+
+        viewModel.selectedProviderID = .gemini
+        XCTAssertEqual(viewModel.apiKeyInput, "gemini-key")
+        XCTAssertEqual(try mockConfigStore.loadAPIKey(for: .gemini), "gemini-key")
+    }
+
+    func testClearKeepsSavedKeyForReselection() {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .gemini
+        viewModel.apiKeyInput = "gemini-key"
+        viewModel.saveConfiguration()
+
+        viewModel.clearConfiguration()
+        XCTAssertFalse(viewModel.isConfigured)
+
+        viewModel.selectedProviderID = .anthropic
+        viewModel.selectedProviderID = .gemini
+        XCTAssertEqual(viewModel.apiKeyInput, "gemini-key")
+    }
+
+    func testUnsavedTypedKeySurvivesSwitchingProviders() throws {
+        try mockConfigStore.saveConfig(.gemini(apiKey: "saved-gemini-key"))
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openai
+        viewModel.apiKeyInput = "typed-openai-key"
+
+        viewModel.selectedProviderID = .anthropic
+        XCTAssertEqual(viewModel.apiKeyInput, "")
+        viewModel.selectedProviderID = .gemini
+        XCTAssertEqual(viewModel.apiKeyInput, "saved-gemini-key")
+        viewModel.selectedProviderID = .openai
+        XCTAssertEqual(viewModel.apiKeyInput, "typed-openai-key")
+    }
+
+    func testSavedKeyReplacesEarlierTypedDraftForThatProvider() throws {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openai
+        viewModel.apiKeyInput = "first-draft"
+        viewModel.selectedProviderID = .anthropic
+        viewModel.selectedProviderID = .openai
+        viewModel.apiKeyInput = "final-key"
+        viewModel.saveConfiguration()
+        XCTAssertEqual(try mockConfigStore.loadAPIKey(for: .openai), "final-key")
+
+        viewModel.selectedProviderID = .anthropic
+        viewModel.selectedProviderID = .openai
+        XCTAssertEqual(viewModel.apiKeyInput, "final-key")
+    }
+
+    func testUneditedKeyIsNotCachedOverAKeyRotatedElsewhere() throws {
+        try mockConfigStore.saveConfig(.gemini(apiKey: "old-key"))
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        XCTAssertEqual(viewModel.apiKeyInput, "old-key")
+
+        viewModel.selectedProviderID = .anthropic
+        // The CLI or another app instance rotates the key meanwhile.
+        mockConfigStore.storedKeys[.gemini] = "rotated-key"
+        viewModel.selectedProviderID = .gemini
+
+        XCTAssertEqual(viewModel.apiKeyInput, "rotated-key")
+    }
+
+    func testTurningAIOffDropsUnsavedTypedKeys() {
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        viewModel.selectedProviderID = .openai
+        viewModel.apiKeyInput = "typed-but-abandoned"
+        viewModel.selectedProviderID = nil
+        viewModel.saveConfiguration()
+
+        viewModel.selectedProviderID = .openai
+        XCTAssertEqual(viewModel.apiKeyInput, "")
+    }
+
+    func testRemoveSavedKeyIsOfferedOnlyWhenNoSavedRouteUsesIt() throws {
+        try mockConfigStore.saveConfig(.gemini(apiKey: "gemini-key"))
+        viewModel.configure(configStore: mockConfigStore, llmClient: mockClient)
+        XCTAssertFalse(viewModel.canRemoveSavedAPIKey, "The saved default uses this key")
+
+        viewModel.selectedProviderID = nil
+        viewModel.saveConfiguration()
+        viewModel.selectedProviderID = .gemini
+        XCTAssertTrue(viewModel.canRemoveSavedAPIKey)
+
+        viewModel.removeSavedAPIKey()
+
+        XCTAssertNil(try mockConfigStore.loadAPIKey(for: .gemini))
+        XCTAssertEqual(viewModel.apiKeyInput, "")
+        XCTAssertFalse(viewModel.canRemoveSavedAPIKey)
+        viewModel.selectedProviderID = .anthropic
+        viewModel.selectedProviderID = .gemini
+        XCTAssertEqual(viewModel.apiKeyInput, "")
     }
 
     func testClearResetsCustomModelDraft() {
@@ -1249,7 +1401,8 @@ final class LLMSettingsViewModelTests: XCTestCase {
         viewModel.saveConfiguration()
 
         XCTAssertEqual(callbackCount, 1)
-        XCTAssertNil(try store.loadAPIKey(for: .openai))
+        // Turning AI off keeps the key so reselecting OpenAI does not ask again.
+        XCTAssertEqual(try store.loadAPIKey(for: .openai), "working-key")
     }
 
     func testFailedSavePreservesWorkingProviderAndDoesNotNotifyConsumers() throws {
@@ -1279,7 +1432,10 @@ final class LLMSettingsViewModelTests: XCTestCase {
 
     func testFailedClearAndSavingNonePreserveConfigurationAndPreferences() throws {
         let credentials = InMemoryKeyValueStore()
-        let store = LLMConfigStore(preferencesDomain: defaultsSuiteName, lockURL: routeLockURL, keychain: credentials)
+        let refresh = SettingsRouteRefreshSwitch()
+        let store = LLMConfigStore(
+            preferencesDomain: defaultsSuiteName, lockURL: routeLockURL, keychain: credentials,
+            synchronizePreferences: { refresh.synchronize($0) })
         try store.saveConfig(.openai(apiKey: "working-key"))
         viewModel.configure(
             configStore: store,
@@ -1290,20 +1446,23 @@ final class LLMSettingsViewModelTests: XCTestCase {
         viewModel.aiFormatterEnabledForTranscriptions = false
         viewModel.autoGenerateMeetingTitles = false
         let preferencesBefore = defaults.dictionaryRepresentation()
-        credentials.deleteError = KeyValueStoreError.unsupported
+        refresh.fails = true
         viewModel.onConfigurationChanged = { XCTFail("Failed clear must not notify consumers") }
 
         viewModel.clearConfiguration()
 
         guard case .error = viewModel.saveState else { return XCTFail("Expected a clear error") }
         XCTAssertEqual(viewModel.selectedProviderID, .openai)
+        refresh.fails = false
         XCTAssertEqual(try store.loadAPIKey(), "working-key")
         XCTAssertEqual(defaults.dictionaryRepresentation() as NSDictionary, preferencesBefore as NSDictionary)
 
+        refresh.fails = true
         viewModel.selectedProviderID = nil
         viewModel.saveConfiguration()
 
         guard case .error = viewModel.saveState else { return XCTFail("Saving None must preserve the clear error") }
+        refresh.fails = false
         XCTAssertEqual(try store.loadConfig()?.id, .openai)
         XCTAssertEqual(try store.loadAPIKey(), "working-key")
         XCTAssertTrue(viewModel.aiFormatterEnabledForDictation)
@@ -2427,5 +2586,19 @@ private actor SettingsFakeInProcessModelDownloader: InProcessModelDownloading {
     func deleteDefaultModel() async throws {
         isDownloaded = false
         cacheSizeBytes = 0
+    }
+}
+
+/// Fails the route store's preferences refresh while `fails` is set, so a
+/// Clear is rejected before it changes anything.
+private final class SettingsRouteRefreshSwitch: @unchecked Sendable {
+    private let lock = NSLock()
+    private var failing = false
+    var fails: Bool {
+        get { lock.withLock { failing } }
+        set { lock.withLock { failing = newValue } }
+    }
+    func synchronize(_ domain: String) -> Bool {
+        fails ? false : CFPreferencesAppSynchronize(domain as CFString)
     }
 }

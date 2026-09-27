@@ -37,8 +37,9 @@ final class LLMConfigStoreTests: XCTestCase {
             { try blocked.saveTaskOverride(replacement, for: .analysis) },
             { try blocked.saveConfiguration(replacement, cleanupOverride: nil, analysisOverride: nil) },
             { try blocked.deleteConfig() },
+            { try blocked.clearRoutesProvidersCannotServe() },
             { try blocked.saveAPIKey("replacement") },
-            { try blocked.deleteAPIKey() },
+            { try blocked.deleteAPIKey(for: .openai) },
         ]
         for operation in operations {
             XCTAssertThrowsError(try operation()) { error in
@@ -51,7 +52,7 @@ final class LLMConfigStoreTests: XCTestCase {
         XCTAssertEqual(try store.loadAPIKey(), "working-key")
     }
 
-    func testCredentialMutationKeepsLeaseUntilMetadataPublicationOrClear() throws {
+    func testCredentialMutationKeepsLeaseUntilMetadataPublication() throws {
         let keys = RouteMutationKeys()
         let writer = LLMConfigStore(preferencesDomain: suiteName, lockURL: routeLockURL, keychain: keys)
         try writer.saveConfig(.openai(apiKey: "old", model: "old"))
@@ -66,9 +67,9 @@ final class LLMConfigStoreTests: XCTestCase {
         XCTAssertEqual(try writer.loadConfig()?.modelName, "new")
         XCTAssertEqual(try writer.loadAPIKey(), "new")
         try writer.deleteConfig()
-        XCTAssertEqual(competingAttempts, 2)
+        XCTAssertEqual(competingAttempts, 1, "Clearing routes must not mutate credentials")
         XCTAssertNil(try writer.loadConfigMetadata())
-        XCTAssertNil(try keys.getString("llm_api_key_openai"))
+        XCTAssertEqual(try keys.getString("llm_api_key_openai"), "new")
     }
 
     func testRefreshFailureRejectsBeforeAnyCredentialOrMetadataMutation() throws {
@@ -389,15 +390,15 @@ final class LLMConfigStoreTests: XCTestCase {
         XCTAssertNil(loaded)
     }
 
-    func testDeleteClearsBothStores() throws {
+    func testDeleteClearsRoutesButKeepsSavedKey() throws {
         let config = LLMProviderConfig.openai(apiKey: "sk-test")
         try store.saveConfig(config)
 
         try store.deleteConfig()
 
         XCTAssertNil(try store.loadConfig())
-        XCTAssertNil(try keychain.getString("llm_api_key_openai"))
         XCTAssertNil(defaults.data(forKey: "llm_provider_config"))
+        XCTAssertEqual(try store.loadAPIKey(for: .openai), "sk-test")
     }
 
     func testOllamaConfigWithNoAPIKey() throws {
@@ -473,8 +474,87 @@ final class LLMConfigStoreTests: XCTestCase {
         XCTAssertEqual(try store.loadAPIKey(), "sk-direct")
         XCTAssertEqual(try store.loadAPIKey(for: .openai), "sk-direct")
 
-        try store.deleteAPIKey()
-        XCTAssertNil(try store.loadAPIKey())
+    }
+
+    func testDeleteAPIKeyRefusesAProviderASavedRouteUses() throws {
+        try store.saveConfig(.anthropic(apiKey: "sk-ant"))
+        try store.saveTaskOverride(.openai(apiKey: "sk-openai"), for: .analysis)
+
+        for provider in [LLMProviderID.anthropic, .openai] {
+            XCTAssertThrowsError(try store.deleteAPIKey(for: provider)) { error in
+                guard case LLMConfigStore.StoreError.credentialInUse = error else {
+                    return XCTFail("Expected credentialInUse, got \(error)")
+                }
+            }
+        }
+        XCTAssertEqual(try store.loadAPIKey(for: .anthropic), "sk-ant")
+        XCTAssertEqual(try store.loadAPIKey(for: .openai), "sk-openai")
+    }
+
+    func testDeleteAPIKeyRemovesAnUnusedProviderKey() throws {
+        try store.saveConfig(.gemini(apiKey: "sk-gemini"))
+        try store.deleteConfig()
+
+        try store.deleteAPIKey(for: .gemini)
+
+        XCTAssertNil(try store.loadAPIKey(for: .gemini))
+    }
+
+    func testClearRoutesProvidersCannotServeRetiresAppleDefaultAndAnalysis() throws {
+        try store.saveConfig(.appleIntelligence())
+        try store.clearRoutesProvidersCannotServe()
+        XCTAssertNil(try store.loadConfigMetadata())
+
+        try store.saveConfig(.openai(apiKey: "sk-openai"))
+        try store.saveTaskOverride(.appleIntelligence(), for: .cleanup)
+        try store.saveTaskOverride(.appleIntelligence(), for: .analysis)
+        try store.clearRoutesProvidersCannotServe()
+
+        XCTAssertEqual(try store.loadConfigMetadata()?.id, .openai)
+        XCTAssertEqual(try store.loadTaskOverrideMetadata(.cleanup)?.id, .appleIntelligence)
+        XCTAssertNil(try store.loadTaskOverrideMetadata(.analysis))
+        XCTAssertEqual(try store.loadAPIKey(for: .openai), "sk-openai")
+    }
+
+    func testRouteRetirementPreservesValidReplacementAndStandaloneCleanup() throws {
+        try store.saveConfiguration(
+            nil, cleanupOverride: .appleIntelligence(), analysisOverride: .ollama(model: "replacement"))
+        try store.clearRoutesProvidersCannotServe()
+        XCTAssertEqual(try store.loadConfig(for: .cleanup)?.id, .appleIntelligence)
+        XCTAssertEqual(try store.loadConfig(for: .analysis)?.modelName, "replacement")
+        XCTAssertNil(try store.loadConfig(for: .transform))
+    }
+
+    func testRouteRetirementHoldsLeaseThroughPublication() throws {
+        try store.saveConfig(.openai(apiKey: "saved-key"))
+        try store.saveTaskOverride(.appleIntelligence(), for: .analysis)
+        let competitor = store!
+        let retiring = LLMConfigStore(
+            preferencesDomain: suiteName, lockURL: routeLockURL, keychain: keychain,
+            synchronizePreferences: { domain in
+                do {
+                    try competitor.saveTaskOverride(.ollama(model: "replacement"), for: .analysis)
+                    XCTFail("A competing save must fail while retirement holds the lease")
+                } catch LLMConfigStore.StoreError.busy {
+                    // Expected: the inspection/publication callback still owns the lease.
+                } catch {
+                    XCTFail("Expected busy, got \(error)")
+                }
+                return CFPreferencesAppSynchronize(domain as CFString)
+            })
+        try retiring.clearRoutesProvidersCannotServe()
+        XCTAssertNil(try store.loadTaskOverrideMetadata(.analysis))
+        try competitor.saveTaskOverride(.ollama(model: "replacement"), for: .analysis)
+        try retiring.clearRoutesProvidersCannotServe()
+        XCTAssertEqual(try store.loadConfig(for: .analysis)?.modelName, "replacement")
+    }
+
+    func testAppleIntelligenceServesOnlyCleanup() {
+        XCTAssertTrue(LLMProviderID.appleIntelligence.canServe(.cleanup))
+        XCTAssertFalse(LLMProviderID.appleIntelligence.canServe(.analysis))
+        XCTAssertFalse(LLMProviderID.appleIntelligence.canServe(.transform))
+        XCTAssertFalse(LLMProviderID.appleIntelligence.canServeAsDefault)
+        XCTAssertTrue(LLMProviderID.allCases.filter { $0 != .appleIntelligence }.allSatisfy(\.canServeAsDefault))
     }
 
     func testMissingKeychainKeyReturnsConfigWithNilAPIKey() throws {
@@ -509,16 +589,16 @@ final class LLMConfigStoreTests: XCTestCase {
         XCTAssertEqual(try store.loadAPIKey(for: .anthropic), "sk-ant-key")
     }
 
-    func testDeleteOnlyClearsActiveProviderKey() throws {
-        // Save keys for multiple providers
+    func testDeleteKeepsEverySavedProviderKey() throws {
         try store.saveConfig(.openai(apiKey: "sk-openai"))
         try store.saveConfig(.anthropic(apiKey: "sk-ant"))
 
-        // Delete clears only the active provider (anthropic) key
+        // Turning AI off must not delete the active provider's key: choosing
+        // that provider again should not ask for the key again.
         try store.deleteConfig()
 
         XCTAssertEqual(try keychain.getString("llm_api_key_openai"), "sk-openai")
-        XCTAssertNil(try keychain.getString("llm_api_key_anthropic"))
+        XCTAssertEqual(try keychain.getString("llm_api_key_anthropic"), "sk-ant")
     }
 
     func testFailedCredentialWritePreservesWorkingProviderAcrossReopen() throws {
@@ -563,15 +643,14 @@ final class LLMConfigStoreTests: XCTestCase {
         XCTAssertEqual(try store.loadAPIKey(), "working-token")
     }
 
-    func testFailedClearPreservesWorkingConfiguration() throws {
+    func testClearDoesNotTouchKeychain() throws {
         try store.saveConfig(.openai(apiKey: "working-key", model: "working-model"))
         keychain.deleteError = KeyValueStoreError.unsupported
 
-        XCTAssertThrowsError(try store.deleteConfig())
+        try store.deleteConfig()
 
-        XCTAssertEqual(try store.loadConfig()?.id, .openai)
-        XCTAssertEqual(try store.loadConfig()?.modelName, "working-model")
-        XCTAssertEqual(try store.loadAPIKey(), "working-key")
+        XCTAssertNil(try store.loadConfig())
+        XCTAssertEqual(try store.loadAPIKey(for: .openai), "working-key")
     }
 
     func testTaskOverrideRoundTripDoesNotReplaceDefault() throws {

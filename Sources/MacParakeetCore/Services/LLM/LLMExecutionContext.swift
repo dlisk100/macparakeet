@@ -10,6 +10,21 @@ public enum LLMTaskGroup: String, Sendable, Codable, CaseIterable {
     }
 }
 
+public extension LLMProviderID {
+    /// Apple Intelligence's 4,096-token window holds the input and the answer
+    /// together. That fits dictation cleanup, but a summary, chat, or card over
+    /// a meeting-length transcript would see only a fraction of it, so Apple
+    /// Intelligence serves the cleanup route only.
+    func canServe(_ task: LLMTaskGroup) -> Bool {
+        self != .appleIntelligence || task == .cleanup
+    }
+
+    /// The default route serves every task that does not override it.
+    var canServeAsDefault: Bool {
+        LLMTaskGroup.allCases.allSatisfy(canServe)
+    }
+}
+
 public struct LLMExecutionContext: Sendable, Equatable {
     public let providerConfig: LLMProviderConfig
     public let localCLIConfig: LocalCLIConfig?
