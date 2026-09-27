@@ -527,12 +527,12 @@ public enum SettingsSearchIndex {
         SettingsSearchEntry(
             id: "ai.meetingLanguage",
             tab: .ai,
-            title: "AI Result Language",
-            subtitle: "Language for generated summaries, chapters, and action items.",
+            title: "Language of AI Results",
+            subtitle: "Language for summaries, chapters, action items, and other prompt results.",
             keywords: [
                 "ai result language", "meeting ai language", "summary language", "output language",
                 "follow transcript", "english", "polish", "german", "spanish",
-                "french", "portuguese", "japanese", "chinese", "translation",
+                "french", "portuguese", "japanese", "chinese", "korean", "translation", "translate",
                 "summaries in", "chapters language", "action items language",
             ],
             cardAnchor: "ai.meetingLanguage"
@@ -594,7 +594,7 @@ public enum SettingsSearchIndex {
             id: "system.startup",
             tab: .system,
             title: "Startup",
-            subtitle: "How MacParakeet shows up at sign-in.",
+            subtitle: "How MacParakeet starts and where it appears on your Mac.",
             keywords: [
                 "launch at login", "login items", "menu bar", "menu bar icon", "hide menu bar icon",
                 "status icon", "menu bar only", "startup", "boot", "auto launch",

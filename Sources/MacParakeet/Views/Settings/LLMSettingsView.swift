@@ -16,6 +16,7 @@ struct LLMSettingsView: View {
 
     @State private var showAdvanced = false
     @State private var showAIFormatterPrompt = false
+    @State private var showAIResultLanguageDetails = false
     @State private var showAIFormatterDictationPrompt = false
     @State private var showAIFormatterCustomProfiles = false
     @State private var showAIFormatterAppPicker = false
@@ -604,7 +605,7 @@ struct LLMSettingsView: View {
                     Text(
                         manager.isLocalAISelected
                             ? "Local AI is downloaded and selected."
-                            : "Local AI is downloaded. The current AI choice can still stay on a cloud or BYO provider."
+                            : "Local AI is downloaded. Your current AI choice can still use a cloud provider or your own server."
                     )
                     .font(DesignSystem.Typography.caption)
                     .foregroundStyle(.secondary)
@@ -799,7 +800,7 @@ struct LLMSettingsView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Transcript context for AI")
                         .font(DesignSystem.Typography.body.weight(.semibold))
-                    Text("Controls what summaries, transcript chat, and Meeting Ask send to your AI provider.")
+                    Text("Choose what summaries, transcript chat, and Meeting Ask send to your AI provider.")
                         .font(DesignSystem.Typography.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -827,7 +828,7 @@ struct LLMSettingsView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DesignSystem.Colors.textSecondary)
                 Text(
-                    "When included, speaker labels are a rough reference from audio-source separation and diarization, not a high-accuracy identification of who said each line."
+                    "Speaker labels are a best guess from audio sources and voice separation, so they may not match who actually said each line."
                 )
                 .font(DesignSystem.Typography.caption)
                 .foregroundStyle(.secondary)
@@ -842,12 +843,12 @@ struct LLMSettingsView: View {
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
             HStack(alignment: .top, spacing: DesignSystem.Spacing.md) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("AI result language")
+                    Text("Language of AI results")
                         .font(DesignSystem.Typography.body.weight(.semibold))
                     Text(
                         """
-                        Language for generated summaries, chapters, and action items. \
-                        Does not change speech recognition or the stored transcript.
+                        Summaries, chapters, action items, and other prompt results are written in this \
+                        language. Transcripts always stay in the language that was spoken.
                         """
                     )
                     .font(DesignSystem.Typography.caption)
@@ -857,22 +858,36 @@ struct LLMSettingsView: View {
 
                 Spacer(minLength: DesignSystem.Spacing.md)
 
-                Picker("AI result language", selection: $viewModel.meetingAIOutputLanguagePolicy) {
-                    ForEach(MeetingAIOutputLanguagePolicy.pickerCases) { policy in
-                        Text(policy.displayTitle).tag(policy)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(width: 200)
+                LanguagePickerButton(
+                    selection: aiResultLanguageSelection,
+                    isDisabled: false,
+                    pinned: .followTranscript,
+                    accessibilityName: "Language of AI results"
+                )
             }
 
             Text(viewModel.meetingAIOutputLanguagePolicy.detail)
                 .font(DesignSystem.Typography.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            DisclosureGroup("How it works", isExpanded: $showAIResultLanguageDetails) {
+                AIResultLanguageExplainer(policy: viewModel.meetingAIOutputLanguagePolicy)
+                    .padding(.top, DesignSystem.Spacing.sm)
+            }
+            .font(DesignSystem.Typography.caption)
         }
         .id("ai.meetingLanguage")
+    }
+
+    private var aiResultLanguageSelection: Binding<String> {
+        Binding(
+            get: { viewModel.meetingAIOutputLanguagePolicy.configurationValue },
+            set: { value in
+                guard let policy = MeetingAIOutputLanguagePolicy(configurationValue: value) else { return }
+                viewModel.meetingAIOutputLanguagePolicy = policy
+            }
+        )
     }
 
     private var meetingTitlesSection: some View {
@@ -881,7 +896,7 @@ struct LLMSettingsView: View {
                 Text("Meeting titles")
                     .font(DesignSystem.Typography.body.weight(.semibold))
                 Text(
-                    "Use the Meetings & library AI route to replace timestamp-only meeting names with short topic titles after transcription."
+                    "Replaces date-and-time meeting names with a short topic title after transcription, using your Meetings & library AI."
                 )
                 .font(DesignSystem.Typography.caption)
                 .foregroundStyle(.secondary)
@@ -924,7 +939,7 @@ struct LLMSettingsView: View {
                                 )
                         }
                         Text(
-                            "Uses the Dictation & cleanup AI route after cleanup for file and meeting transcripts. Dictation use can add latency."
+                            "Rewrites transcripts with your Dictation & cleanup AI as the last step, after cleanup. Using it for dictation adds a short wait before pasting."
                         )
                         .font(DesignSystem.Typography.caption)
                         .foregroundStyle(.secondary)
@@ -2215,3 +2230,4 @@ struct LLMSettingsView: View {
         }
     }
 }
+
