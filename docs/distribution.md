@@ -263,7 +263,7 @@ must report the promoted semver from `Sources/CLI/CHANGELOG.md`.
 
 ### Version bumping
 
-The current app release is **0.8.8**, continuing the 0.8.x release train.
+The current app release is **0.8.9**, continuing the 0.8.x release train.
 **0.9.0 is reserved for qualified, publicly enabled Jev Voice Control.**
 This deliberate milestone policy takes precedence over the generic guidance
 below. Voice Control remains release-gated; additive improvements to the
@@ -393,6 +393,12 @@ Verify appcast is live:
 ```bash
 curl -s "https://macparakeet.com/appcast.xml?ts=$(date +%s)" | grep "sparkle:version"
 ```
+
+Keep current website download buttons on `latestRelease.downloadUrl` from the
+website's shared release data, using the same versioned URL as the appcast.
+The unversioned URL can remain cached after an upload. Verify with a full GET:
+a HEAD response can describe the new object while a cached GET serves the old
+DMG. Do not infer artifact identity from headers alone.
 
 ### Step 7: Verify end-to-end
 
