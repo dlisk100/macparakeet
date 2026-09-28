@@ -163,6 +163,54 @@ func effectiveTranscriptScrollTarget(
     )
 }
 
+/// The scroll id of the transcript-stack row that renders each effective
+/// segment: its speaker-turn card, or the segment's own row when the
+/// transcript has no speakers. Mirrors the branch `body` takes.
+///
+/// Before a row is realized, a `LazyVStack` resolves `scrollTo` only for the
+/// ids of its direct children. An id nested inside a row, such as a later
+/// segment in a speaker card, stays unresolvable until that row is realized,
+/// so a jump to it from far away is silently dropped. Scroll to the row first,
+/// then to the segment.
+func effectiveTranscriptRowIDs(
+    for attribution: EffectiveSpeakerAttribution
+) -> [SpeakerEditableSegmentID: SpeakerEditableSegmentID] {
+    let cards =
+        attribution.speakers.isEmpty
+        ? [] : identifiedEffectiveSpeakerTurnCards(attribution.turns)
+    guard !cards.isEmpty else {
+        return Dictionary(
+            attribution.editableSegments.map { ($0.id, $0.id) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+    var rows: [SpeakerEditableSegmentID: SpeakerEditableSegmentID] = [:]
+    for card in cards {
+        for segment in card.segments where rows[segment.id] == nil {
+            rows[segment.id] = card.id
+        }
+    }
+    return rows
+}
+
+/// Legacy (pre-attribution) counterpart of `effectiveTranscriptRowIDs`,
+/// keyed and valued by segment `startMs`. Flat rows own their own id, so only
+/// speaker-card layouts need a mapping.
+func legacyTranscriptRowIDs(
+    hasSpeakers: Bool,
+    cards: [IdentifiedSpeakerTurn]
+) -> [Int: Int] {
+    guard hasSpeakers else { return [:] }
+    var rows: [Int: Int] = [:]
+    for card in cards {
+        guard let cardID = card.turn.segments.first?.startMs else { continue }
+        for segment in card.turn.segments where rows[segment.startMs] == nil {
+            rows[segment.startMs] = cardID
+        }
+    }
+    return rows
+}
+
 private func identifySpeakerTurns(_ turns: [SpeakerTurn]) -> [IdentifiedSpeakerTurn] {
     var duplicateCounts: [SpeakerTurnIdentityBase: Int] = [:]
     return turns.map { turn in
@@ -347,22 +395,22 @@ struct TranscriptTimestampedContentView<SpeakerLabelContent: View, TurnBanner: V
     private func segmentRow(_ indexed: IndexedTranscriptSegment) -> some View {
         let index = indexed.index
         let segment = indexed.segment
-        return ZStack(alignment: .topLeading) {
-            timestampScrollAnchor(startMs: segment.startMs)
-            TranscriptSegmentRow(
-                startMs: segment.startMs,
-                text: segment.text,
-                timestampText: timestampLabel(segment.startMs),
-                isActive: isSegmentActive(index),
-                isSeekable: isTimestampSeekable,
-                bodyFont: bodyFont,
-                showRowBackground: true,
-                highlightRanges: highlightRangesByStartMs[segment.startMs] ?? [],
-                currentRange: currentHighlight?.id == segment.startMs ? currentHighlight?.range : nil,
-                onPlayFromHere: { onTimestampTap(segment.startMs) },
-                textSelectionEnabled: textSelectionEnabled
-            )
-        }
+        return TranscriptSegmentRow(
+            startMs: segment.startMs,
+            text: segment.text,
+            timestampText: timestampLabel(segment.startMs),
+            isActive: isSegmentActive(index),
+            isSeekable: isTimestampSeekable,
+            bodyFont: bodyFont,
+            showRowBackground: true,
+            highlightRanges: highlightRangesByStartMs[segment.startMs] ?? [],
+            currentRange: currentHighlight?.id == segment.startMs ? currentHighlight?.range : nil,
+            onPlayFromHere: { onTimestampTap(segment.startMs) },
+            textSelectionEnabled: textSelectionEnabled
+        )
+        // The row itself carries the scroll id: a lazy stack can only scroll
+        // to its direct children before they are realized.
+        .id(segment.startMs)
         .onAppear(perform: onRenderedChildAppear)
     }
 
