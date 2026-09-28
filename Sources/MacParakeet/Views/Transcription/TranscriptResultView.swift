@@ -42,6 +42,14 @@ private struct TranscriptFindBlock: Equatable, Identifiable {
     }
 }
 
+/// A saved find-and-replace, kept while it is the transcript's latest
+/// correction so the find bar can report it and offer Undo.
+private struct TranscriptFindReplacementReceipt: Equatable {
+    let transcriptionID: UUID
+    let correctionRevision: Int
+    let count: Int
+}
+
 /// Invisible scroll target inside the full-text transcript. Text mode keeps one
 /// selectable `Text` for the transcript body, then overlays a single prefix
 /// target for the active match so find navigation can still land near it.
@@ -597,6 +605,10 @@ struct TranscriptResultView: View {
     @State private var findScrollToken = 0
     /// Second, precise hop of a find jump into a lazy row (see `revealFindMatch`).
     @State private var findRevealTask: Task<Void, Never>?
+    @State private var findReplaceExpanded = false
+    @State private var findReplaceText = ""
+    @State private var findReplaceSaving = false
+    @State private var findReplacementReceipt: TranscriptFindReplacementReceipt?
     /// True once find-navigation has taken over the auto-scroll pause, so closing
     /// the bar resumes playback-follow — without clobbering an unrelated
     /// manual-scroll pause when find never navigated.
@@ -908,6 +920,7 @@ struct TranscriptResultView: View {
         findFieldFocused = false
         findRevealTask?.cancel()
         findRevealTask = nil
+        resetFindReplace()
         findModel.clear()
         findBlocks = []
         findPausedAutoScroll = false
@@ -2171,6 +2184,8 @@ struct TranscriptResultView: View {
             }
             if findBarVisible { rebuildFindBlocks() }
             if transcriptDisplayMode != .timed {
+                // Replace edits timed segments; see `findReplaceAvailable`.
+                findReplaceExpanded = false
                 editingSpeakers = false
                 speakerSelection.clear()
             }
@@ -2246,6 +2261,7 @@ struct TranscriptResultView: View {
             isFocused: $findFieldFocused,
             position: findModel.displayPosition,
             hasQueryButNoMatches: findHasQueryNoMatches,
+            replace: findReplaceControls,
             onNext: {
                 findModel.next(); findScrollToken &+= 1
             },
@@ -2262,6 +2278,10 @@ struct TranscriptResultView: View {
         ZStack {
             Button("") { openFindBar() }
                 .keyboardShortcut("f", modifiers: .command)
+            if findReplaceAvailable {
+                Button("") { openFindBar(showingReplace: true) }
+                    .keyboardShortcut("f", modifiers: [.command, .option])
+            }
             if findBarVisible, findModel.hasMatches {
                 Button("") {
                     findModel.next(); findScrollToken &+= 1
@@ -2376,12 +2396,13 @@ struct TranscriptResultView: View {
             && !findModel.hasMatches
     }
 
-    private func openFindBar() {
+    private func openFindBar(showingReplace: Bool = false) {
         // Find is a reading affordance; editing uses the raw text editor.
         guard !editingTranscript, !editingReadingTranscript else { return }
         if !findBarVisible {
             withAnimation(DesignSystem.Animation.contentSwap) { findBarVisible = true }
         }
+        if showingReplace { setFindReplaceExpanded(true) }
         rebuildFindBlocks()
         Task { @MainActor in findFieldFocused = true }
     }
@@ -2390,10 +2411,128 @@ struct TranscriptResultView: View {
         withAnimation(DesignSystem.Animation.contentSwap) { findBarVisible = false }
         findRevealTask?.cancel()
         findRevealTask = nil
+        resetFindReplace()
         findFieldFocused = false
         findModel.clear()
         findBlocks = []
         releaseFindOwnedAutoScrollPause()
+    }
+
+    // MARK: Find and replace
+
+    /// Replace saves text corrections to timed segments through the speaker
+    /// correction ledger, like the reading editor, so it is offered exactly
+    /// where that editor is and every replacement is one undoable correction.
+    /// It runs on the Timed surface, whose find blocks are those segments;
+    /// Text mode shows a formatted transcript that need not match them.
+    private var findReplaceAvailable: Bool {
+        readingTranscriptEditEnabled
+    }
+
+    private var findReplaceControls: TranscriptFindReplaceControls? {
+        guard findReplaceAvailable else { return nil }
+        let receipt = currentFindReplacementReceipt
+        return TranscriptFindReplaceControls(
+            text: $findReplaceText,
+            isExpanded: Binding(
+                get: { findReplaceExpanded },
+                set: { setFindReplaceExpanded($0) }
+            ),
+            isBusy: findReplaceSaving || viewModel.isApplyingSpeakerCorrection,
+            status: receipt.map { "Replaced \($0.count)" },
+            onReplace: { performFindReplace(all: false) },
+            onReplaceAll: { performFindReplace(all: true) },
+            onUndo: receipt != nil && viewModel.canUndoSpeakerCorrection ? undoFindReplacement : nil
+        )
+    }
+
+    /// The last replacement while it is still the transcript's latest
+    /// correction; any later edit, undo, or reload retires it.
+    private var currentFindReplacementReceipt: TranscriptFindReplacementReceipt? {
+        guard let receipt = findReplacementReceipt,
+            receipt.transcriptionID == transcription.id,
+            receipt.correctionRevision == currentCorrectionRevision
+        else { return nil }
+        return receipt
+    }
+
+    private func setFindReplaceExpanded(_ expanded: Bool) {
+        guard !expanded || findReplaceAvailable else { return }
+        findReplaceExpanded = expanded
+        if expanded, transcriptDisplayMode != .timed {
+            transcriptDisplayMode = .timed
+        }
+    }
+
+    private func resetFindReplace() {
+        findReplaceExpanded = false
+        findReplaceText = ""
+        findReplacementReceipt = nil
+    }
+
+    /// Replaces the current match (then moves past it) or every match, and
+    /// saves the changed segments as one text correction.
+    private func performFindReplace(all: Bool) {
+        guard findReplaceAvailable, findBarVisible, transcriptDisplayMode == .timed,
+            !findReplaceSaving, !viewModel.isApplyingSpeakerCorrection,
+            viewModel.currentTranscription?.id == transcription.id,
+            let segments = viewModel.speakerAttribution?.editableSegments
+        else { return }
+        let replacement = findReplaceText
+        let replacements = all
+            ? findModel.replacingAll(with: replacement)
+            : findModel.replacingCurrent(with: replacement).map { [$0] } ?? []
+        // Blocks must still be these segments, in order.
+        for change in replacements {
+            guard segments.indices.contains(change.blockIndex),
+                findBlocks.indices.contains(change.blockIndex),
+                findBlocks[change.blockIndex].id == .effective(segments[change.blockIndex].id)
+            else { return }
+        }
+        // Resume after the inserted text, so a replacement that contains the
+        // query is not matched again.
+        let resume = all ? nil : findModel.current.map {
+            (blockIndex: $0.blockIndex, offset: $0.range.location + replacement.utf16.count)
+        }
+        guard let command = TranscriptFindReplaceEdit.command(for: replacements, in: segments) else {
+            // Nothing would change (for example, the same text): just advance.
+            if !all, findModel.hasMatches {
+                findModel.next()
+                findScrollToken &+= 1
+            }
+            return
+        }
+        let count = replacements.reduce(0) { $0 + $1.count }
+        let transcriptionID = transcription.id
+        findReplaceSaving = true
+        findReplacementReceipt = nil
+        transcriptEditError = nil
+        Task { @MainActor in
+            let succeeded = await viewModel.applySpeakerCorrectionAndWait(command)
+            findReplaceSaving = false
+            guard viewModel.currentTranscription?.id == transcriptionID else { return }
+            guard succeeded else {
+                transcriptEditError = "Couldn't replace. The transcript is unchanged."
+                return
+            }
+            guard findBarVisible else { return }
+            findReplacementReceipt = TranscriptFindReplacementReceipt(
+                transcriptionID: transcriptionID,
+                correctionRevision: currentCorrectionRevision,
+                count: count
+            )
+            rebuildFindBlocks()
+            if let resume {
+                findModel.moveToFirstMatch(atOrAfter: resume.blockIndex, utf16Offset: resume.offset)
+                findScrollToken &+= 1
+            }
+        }
+    }
+
+    private func undoFindReplacement() {
+        guard currentFindReplacementReceipt != nil else { return }
+        findReplacementReceipt = nil
+        viewModel.undoSpeakerCorrection()
     }
 
     /// Resume playback-follow only if find navigation owns the pause; manual
