@@ -74,6 +74,36 @@ struct IdentifiedSpeakerTurn: Identifiable {
 /// a single-speaker recording cannot become one unbounded SwiftUI subtree.
 let maximumSpeakerTurnSegmentsPerCard = 24
 
+/// Find targets a line inside a card; playback and lazy realization target
+/// the card itself. Even the first line needs an identity distinct from it.
+struct TranscriptFindSegmentID<ID: Hashable>: Hashable {
+    let segmentID: ID
+}
+
+@MainActor
+func revealTranscriptFindSegment<ID: Hashable>(
+    _ segmentID: ID,
+    cardID: ID?,
+    usesLazyStack: Bool,
+    proxy: ScrollViewProxy
+) -> Task<Void, Never> {
+    if let cardID, usesLazyStack {
+        proxy.scrollTo(cardID, anchor: .center)
+    }
+    return Task { @MainActor in
+        if cardID != nil, usesLazyStack {
+            // Give the lazy card a layout pass before resolving its nested anchor.
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        guard !Task.isCancelled else { return }
+        if cardID != nil {
+            proxy.scrollTo(TranscriptFindSegmentID(segmentID: segmentID), anchor: .center)
+        } else {
+            proxy.scrollTo(segmentID, anchor: .center)
+        }
+    }
+}
+
 func identifiedSpeakerTurnCards(_ turns: [SpeakerTurn]) -> [IdentifiedSpeakerTurn] {
     let cardTurns = turns.flatMap { turn -> [SpeakerTurn] in
         guard turn.segments.count > maximumSpeakerTurnSegmentsPerCard else {
@@ -164,8 +194,8 @@ func effectiveTranscriptScrollTarget(
 }
 
 /// The scroll id of the transcript-stack row that renders each effective
-/// segment: its speaker-turn card, or the segment's own row when the
-/// transcript has no speakers. Mirrors the branch `body` takes.
+/// segment inside a speaker-turn card. Flat segments have no entry because
+/// their own identity already resolves the row. Mirrors the branch `body` takes.
 ///
 /// Before a row is realized, a `LazyVStack` resolves `scrollTo` only for the
 /// ids of its direct children. An id nested inside a row, such as a later
@@ -178,12 +208,6 @@ func effectiveTranscriptRowIDs(
     let cards =
         attribution.speakers.isEmpty
         ? [] : identifiedEffectiveSpeakerTurnCards(attribution.turns)
-    guard !cards.isEmpty else {
-        return Dictionary(
-            attribution.editableSegments.map { ($0.id, $0.id) },
-            uniquingKeysWith: { first, _ in first }
-        )
-    }
     var rows: [SpeakerEditableSegmentID: SpeakerEditableSegmentID] = [:]
     for card in cards {
         for segment in card.segments where rows[segment.id] == nil {
@@ -492,10 +516,10 @@ struct TranscriptTimestampedContentView<SpeakerLabelContent: View, TurnBanner: V
 
 }
 
-private func timestampScrollAnchor(startMs: Int) -> some View {
+private func findSegmentScrollAnchor<ID: Hashable>(_ segmentID: ID) -> some View {
     Color.clear
         .frame(width: 1, height: 1)
-        .id(startMs)
+        .id(TranscriptFindSegmentID(segmentID: segmentID))
         .accessibilityHidden(true)
 }
 
@@ -601,10 +625,7 @@ private struct EditableTranscriptTurnCardView<SpeakerLabelContent: View>: View {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
                 ForEach(turn.segments) { segment in
                     ZStack(alignment: .topLeading) {
-                        // The card owns its first segment's scroll identity.
-                        if segment.id != turn.id {
-                            effectiveTimestampScrollAnchor(id: segment.id)
-                        }
+                        findSegmentScrollAnchor(segment.id)
                         TranscriptSegmentRow(
                             startMs: segment.startMs,
                             text: segment.text,
@@ -745,9 +766,8 @@ private struct TranscriptTurnCardView<SpeakerLabelContent: View>: View {
 
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
                 ForEach(indexedSegments(segments)) { indexed in
-                    let index = indexed.index
                     let segment = indexed.segment
-                    turnSegmentRow(index: index, segment: segment)
+                    turnSegmentRow(segment: segment)
                 }
             }
         }
@@ -768,7 +788,7 @@ private struct TranscriptTurnCardView<SpeakerLabelContent: View>: View {
     }
 
     @ViewBuilder
-    private func turnSegmentRow(index: Int, segment: TranscriptSegment) -> some View {
+    private func turnSegmentRow(segment: TranscriptSegment) -> some View {
         let row = TranscriptSegmentRow(
             startMs: segment.startMs,
             text: segment.text,
@@ -784,15 +804,9 @@ private struct TranscriptTurnCardView<SpeakerLabelContent: View>: View {
             onPlayFromHere: { onTimestampTap(segment.startMs) },
             textSelectionEnabled: textSelectionEnabled
         )
-        if index == 0 {
+        ZStack(alignment: .topLeading) {
+            findSegmentScrollAnchor(segment.startMs)
             row
-        } else {
-            // Non-first rows get their own anchors so find navigation can land
-            // inside a speaker turn without shifting the first-line/card target.
-            ZStack(alignment: .topLeading) {
-                timestampScrollAnchor(startMs: segment.startMs)
-                row
-            }
         }
     }
 

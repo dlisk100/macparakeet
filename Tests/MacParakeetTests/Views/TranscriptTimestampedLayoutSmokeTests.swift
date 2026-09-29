@@ -445,14 +445,12 @@ final class TranscriptTimestampedLayoutSmokeTests: XCTestCase {
         XCTAssertEqual(rows[segments[48].id], segments[48].id)
     }
 
-    func testEffectiveRowIDsWithoutSpeakersAreTheSegmentsThemselves() {
+    func testEffectiveRowIDsWithoutSpeakersNeedNoCardHop() {
         let attribution = attribution(for: segments(count: 12, speakers: [nil]))
         XCTAssertTrue(attribution.speakers.isEmpty)
         let rows = effectiveTranscriptRowIDs(for: attribution)
 
-        for segment in attribution.editableSegments {
-            XCTAssertEqual(rows[segment.id], segment.id)
-        }
+        XCTAssertTrue(rows.isEmpty)
     }
 
     func testLegacyRowIDsMapSpeakerCardSegmentsToFirstStart() {
@@ -511,7 +509,7 @@ final class TranscriptTimestampedLayoutSmokeTests: XCTestCase {
     /// The find jump used for a segment deep inside a lazy speaker card:
     /// the card id resolves from far away, and once the card is realized the
     /// segment's own anchor refines the position.
-    func testLazyCardSegmentIsReachableThroughItsRow() throws {
+    func testLazyCardSegmentIsReachableThroughItsRow() async throws {
         let attribution = attribution(for: segments(count: 900, speakers: ["S1"]))
         XCTAssertTrue(
             TranscriptBodyLayout.usesLazyStack(
@@ -535,12 +533,104 @@ final class TranscriptTimestampedLayoutSmokeTests: XCTestCase {
         let atRow = scrollView.contentView.bounds.origin.y
         XCTAssertGreaterThan(atRow, 10_000)
 
-        scroll(proxy, to: target.id)
+        // Exercise the production two-hop implementation, including its 50 ms
+        // layout delay, from an unrealized card.
+        scrollView.contentView.scroll(to: .zero)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        await revealTranscriptFindSegment(target.id, cardID: row, usesLazyStack: true, proxy: proxy).value
+        settleFindScroll()
         let atSegment = scrollView.contentView.bounds.origin.y
         XCTAssertNotEqual(atSegment, atRow, "the nested anchor should refine within the card")
 
         // Converged: a repeated jump to the same segment does not move again.
-        scroll(proxy, to: target.id)
+        scroll(proxy, to: TranscriptFindSegmentID(segmentID: target.id))
         XCTAssertEqual(scrollView.contentView.bounds.origin.y, atSegment, accuracy: 1)
+    }
+
+    private func settleFindScroll() {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+    }
+
+    func testFindRevealsFirstEffectiveSegmentInsideTallLazyCard() async throws {
+        let attribution = attribution(for: segments(count: 900, speakers: ["S1"]))
+        let target = attribution.editableSegments[696] // first of a 24-segment card
+        let row = try XCTUnwrap(effectiveTranscriptRowIDs(for: attribution)[target.id])
+        XCTAssertEqual(row, target.id)
+        let box = ProxyBox()
+        let view = host(
+            hasSpeakers: true, cards: [], segments: [], attribution: attribution,
+            onProxy: { box.proxy = $0 }
+        )
+        let (window, scrollView) = try XCTUnwrap(mount(view))
+        defer { window.orderOut(nil) }
+        let proxy = try XCTUnwrap(box.proxy)
+
+        scroll(proxy, to: row)
+        let cardCenter = scrollView.contentView.bounds.origin.y
+        XCTAssertGreaterThan(cardCenter, 10_000)
+        scrollView.contentView.scroll(to: .zero)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+
+        await revealTranscriptFindSegment(target.id, cardID: row, usesLazyStack: true, proxy: proxy).value
+        settleFindScroll()
+        let segmentCenter = scrollView.contentView.bounds.origin.y
+        XCTAssertGreaterThan(segmentCenter, 10_000)
+        // Centering the card leaves this line more than half a viewport above
+        // its center. Find must move up to the first line instead.
+        XCTAssertLessThan(segmentCenter, cardCenter - scrollView.contentView.bounds.height / 2)
+        scroll(proxy, to: TranscriptFindSegmentID(segmentID: target.id))
+        XCTAssertEqual(scrollView.contentView.bounds.origin.y, segmentCenter, accuracy: 1)
+    }
+
+    func testFindRevealsFirstLegacySegmentInsideTallLazyCard() async throws {
+        let source = segments(count: 900, speakers: ["S1"])
+        let cards = cards(for: source)
+        let target = source[696]
+        let row = try XCTUnwrap(legacyTranscriptRowIDs(hasSpeakers: true, cards: cards)[target.startMs])
+        XCTAssertEqual(row, target.startMs)
+        let box = ProxyBox()
+        let view = host(hasSpeakers: true, cards: cards, segments: source, onProxy: { box.proxy = $0 })
+        let (window, scrollView) = try XCTUnwrap(mount(view))
+        defer { window.orderOut(nil) }
+        let proxy = try XCTUnwrap(box.proxy)
+
+        scroll(proxy, to: row)
+        let cardCenter = scrollView.contentView.bounds.origin.y
+        XCTAssertGreaterThan(cardCenter, 10_000)
+        scrollView.contentView.scroll(to: .zero)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+
+        await revealTranscriptFindSegment(target.startMs, cardID: row, usesLazyStack: true, proxy: proxy).value
+        settleFindScroll()
+        let segmentCenter = scrollView.contentView.bounds.origin.y
+        XCTAssertGreaterThan(segmentCenter, 10_000)
+        XCTAssertLessThan(segmentCenter, cardCenter - scrollView.contentView.bounds.height / 2)
+        scroll(proxy, to: TranscriptFindSegmentID(segmentID: target.startMs))
+        XCTAssertEqual(scrollView.contentView.bounds.origin.y, segmentCenter, accuracy: 1)
+    }
+
+    func testCancelledFindDoesNotRefineAfterCardHop() async throws {
+        let attribution = attribution(for: segments(count: 900, speakers: ["S1"]))
+        let target = attribution.editableSegments[696]
+        let box = ProxyBox()
+        let view = host(
+            hasSpeakers: true, cards: [], segments: [], attribution: attribution,
+            onProxy: { box.proxy = $0 }
+        )
+        let (window, scrollView) = try XCTUnwrap(mount(view))
+        defer { window.orderOut(nil) }
+        let proxy = try XCTUnwrap(box.proxy)
+        scroll(proxy, to: target.id)
+        let cardCenter = scrollView.contentView.bounds.origin.y
+        XCTAssertGreaterThan(cardCenter, 10_000)
+        let reveal = revealTranscriptFindSegment(
+            target.id, cardID: target.id, usesLazyStack: true, proxy: proxy
+        )
+        // Cancel after the synchronous card hop but before refinement, as a
+        // manual scroll or a newer find command does.
+        reveal.cancel()
+        await reveal.value
+        settleFindScroll()
+        XCTAssertEqual(scrollView.contentView.bounds.origin.y, cardCenter, accuracy: 1)
     }
 }

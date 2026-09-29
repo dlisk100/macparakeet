@@ -38,7 +38,9 @@ struct TranscriptFindBar: View {
                 // previous one, like a browser find bar.
                 .onSubmit(onNext)
                 .onKeyPress(.return, phases: .down) { press in
-                    guard press.modifiers.contains(.shift) else { return .ignored }
+                    guard press.modifiers.contains(.shift),
+                        press.modifiers.isDisjoint(with: [.command, .option, .control])
+                    else { return .ignored }
                     onPrev()
                     return .handled
                 }
