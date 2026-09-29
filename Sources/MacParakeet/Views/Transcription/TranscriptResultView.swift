@@ -2421,6 +2421,8 @@ struct TranscriptResultView: View {
     private var findReplaceControls: TranscriptFindReplaceControls? {
         guard findReplaceAvailable else { return nil }
         let receipt = currentFindReplacementReceipt
+        let onUndo: (() -> Void)? =
+            receipt != nil && viewModel.canUndoSpeakerCorrection ? { undoFindReplacement() } : nil
         return TranscriptFindReplaceControls(
             text: $findReplaceText,
             isExpanded: Binding(
@@ -2431,7 +2433,7 @@ struct TranscriptResultView: View {
             status: receipt.map { "Replaced \($0.count)" },
             onReplace: { performFindReplace(all: false) },
             onReplaceAll: { performFindReplace(all: true) },
-            onUndo: receipt != nil && viewModel.canUndoSpeakerCorrection ? undoFindReplacement : nil
+            onUndo: onUndo
         )
     }
 
