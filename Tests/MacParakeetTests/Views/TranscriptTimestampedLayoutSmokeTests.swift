@@ -620,9 +620,9 @@ final class TranscriptTimestampedLayoutSmokeTests: XCTestCase {
         let (window, scrollView) = try XCTUnwrap(mount(view))
         defer { window.orderOut(nil) }
         let proxy = try XCTUnwrap(box.proxy)
+        // Realize the nested anchor so an incorrectly uncancelled refinement
+        // cannot silently miss it and let this test pass.
         scroll(proxy, to: target.id)
-        let cardCenter = scrollView.contentView.bounds.origin.y
-        XCTAssertGreaterThan(cardCenter, 10_000)
         let reveal = revealTranscriptFindSegment(
             target.id, cardID: target.id, usesLazyStack: true, proxy: proxy
         )
@@ -631,6 +631,16 @@ final class TranscriptTimestampedLayoutSmokeTests: XCTestCase {
         reveal.cancel()
         await reveal.value
         settleFindScroll()
-        XCTAssertEqual(scrollView.contentView.bounds.origin.y, cardCenter, accuracy: 1)
+        let cancelledOffset = scrollView.contentView.bounds.origin.y
+        XCTAssertGreaterThan(cancelledOffset, 10_000, "the synchronous card hop must still happen")
+
+        // Lazy estimates can adjust the coarse offset as the card is measured.
+        // Prove cancellation suppressed the line hop: explicitly revealing the
+        // first line must still move up by more than half the viewport.
+        scroll(proxy, to: TranscriptFindSegmentID(segmentID: target.id))
+        XCTAssertGreaterThan(
+            cancelledOffset - scrollView.contentView.bounds.origin.y,
+            scrollView.contentView.bounds.height / 2
+        )
     }
 }
