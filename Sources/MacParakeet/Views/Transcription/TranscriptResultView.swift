@@ -29,15 +29,13 @@ private enum TranscriptFindBlockID: Hashable {
 
 private struct TranscriptFindBlock: Equatable, Identifiable {
     let id: TranscriptFindBlockID
-    /// The transcript-stack row that renders this block: its speaker-turn
-    /// card, or the block itself when it is a row of its own. Lazy stacks can
-    /// only scroll to rows, so find reaches a block through its row.
-    let row: TranscriptFindBlockID
+    /// The owning speaker card, or nil for a block that is already a direct row.
+    let row: TranscriptFindBlockID?
     let text: String
 
     init(id: TranscriptFindBlockID, row: TranscriptFindBlockID? = nil, text: String) {
         self.id = id
-        self.row = row ?? id
+        self.row = row
         self.text = text
     }
 }
@@ -2201,6 +2199,7 @@ struct TranscriptResultView: View {
                 NSEvent.removeMonitor(existing)
             }
             scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+                self.findRevealTask?.cancel()
                 if self.playerViewModel.isPlaying {
                     if self.findPausedAutoScroll {
                         // Manual scroll takes ownership and should start the
@@ -2350,29 +2349,19 @@ struct TranscriptResultView: View {
     private func revealFindMatch(in block: TranscriptFindBlock, proxy: ScrollViewProxy) {
         findRevealTask?.cancel()
         findRevealTask = nil
-        guard block.row != block.id, transcriptBodyUsesLazyStack else {
-            scrollFindTarget(block.id, proxy: proxy)
-            return
-        }
-        scrollFindTarget(block.row, proxy: proxy)
-        findRevealTask = Task { @MainActor in
-            // One display frame is enough for the card to be realized; the
-            // margin covers a busy main thread.
-            try? await Task.sleep(for: .milliseconds(50))
-            guard !Task.isCancelled, findCurrentBlock == block else { return }
-            scrollFindTarget(block.id, proxy: proxy)
-        }
-    }
-
-    /// Timed blocks scroll to their row or segment id. Text mode keeps one
-    /// selectable transcript body, so it scrolls to the hidden prefix anchor
-    /// for the current match range.
-    private func scrollFindTarget(_ target: TranscriptFindBlockID, proxy: ScrollViewProxy) {
-        switch target {
+        switch block.id {
         case .effective(let id):
-            proxy.scrollTo(id, anchor: .center)
+            let cardID: SpeakerEditableSegmentID?
+            if case .effective(let rowID) = block.row { cardID = rowID } else { cardID = nil }
+            findRevealTask = revealTranscriptFindSegment(
+                id, cardID: cardID, usesLazyStack: transcriptBodyUsesLazyStack, proxy: proxy
+            )
         case .legacy(let startMs):
-            proxy.scrollTo(startMs, anchor: .center)
+            let cardID: Int?
+            if case .legacy(let rowID) = block.row { cardID = rowID } else { cardID = nil }
+            findRevealTask = revealTranscriptFindSegment(
+                startMs, cardID: cardID, usesLazyStack: transcriptBodyUsesLazyStack, proxy: proxy
+            )
         case .text:
             if let anchor = currentTextFindAnchor {
                 proxy.scrollTo(anchor.id, anchor: .center)
@@ -2546,6 +2535,7 @@ struct TranscriptResultView: View {
     }
 
     private func setFindQuery(_ newValue: String) {
+        findRevealTask?.cancel()
         findModel.setQuery(newValue)
         if !findModel.hasMatches {
             releaseFindOwnedAutoScrollPause()
@@ -2559,6 +2549,7 @@ struct TranscriptResultView: View {
     /// searches the full transcript string so native selection can span line and
     /// paragraph breaks; the current-match scroll anchor is derived on demand.
     private func rebuildFindBlocks() {
+        findRevealTask?.cancel()
         guard findBarVisible, !editingTranscript, !editingReadingTranscript else {
             findBlocks = []
             findModel.setBlocks([])
