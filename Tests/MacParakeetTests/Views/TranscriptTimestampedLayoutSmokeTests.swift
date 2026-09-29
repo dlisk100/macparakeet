@@ -201,7 +201,7 @@ final class TranscriptTimestampedLayoutSmokeTests: XCTestCase {
 
         let start = Date()
         view.layoutSubtreeIfNeeded()
-        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        settleFindScroll()
         let firstLayout = Date().timeIntervalSince(start)
         XCTAssertLessThan(
             firstLayout, firstLayoutBudgetSeconds,
@@ -383,7 +383,7 @@ final class TranscriptTimestampedLayoutSmokeTests: XCTestCase {
         window.orderFront(nil)
         defer { window.orderOut(nil) }
         view.layoutSubtreeIfNeeded()
-        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        settleFindScroll()
 
         XCTAssertGreaterThan(appearances.count, 0)
         XCTAssertLessThan(
@@ -411,14 +411,31 @@ final class TranscriptTimestampedLayoutSmokeTests: XCTestCase {
         window.contentView = view
         window.orderFront(nil)
         view.layoutSubtreeIfNeeded()
-        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        settleFindScroll()
         guard let scrollView = findScrollView(view) else { return nil }
         return (window, scrollView)
     }
 
     private func scroll<ID: Hashable>(_ proxy: ScrollViewProxy, to id: ID) {
         proxy.scrollTo(id, anchor: .center)
+        settleFindScroll()
+    }
+
+    private func settleFindScroll() {
         RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+    }
+
+    /// Runs the production find jump into a lazy card and waits for both hops.
+    private func revealInLazyCard<ID: Hashable>(
+        _ segmentID: ID,
+        cardID: ID,
+        proxy: ScrollViewProxy
+    ) async throws {
+        let reveal = try XCTUnwrap(
+            revealTranscriptFindSegment(segmentID, cardID: cardID, usesLazyStack: true, proxy: proxy)
+        )
+        await reveal.value
+        settleFindScroll()
     }
 
     func testEffectiveRowIDsMapCardSegmentsToTheirCard() {
@@ -537,8 +554,7 @@ final class TranscriptTimestampedLayoutSmokeTests: XCTestCase {
         // layout delay, from an unrealized card.
         scrollView.contentView.scroll(to: .zero)
         scrollView.reflectScrolledClipView(scrollView.contentView)
-        await revealTranscriptFindSegment(target.id, cardID: row, usesLazyStack: true, proxy: proxy).value
-        settleFindScroll()
+        try await revealInLazyCard(target.id, cardID: row, proxy: proxy)
         let atSegment = scrollView.contentView.bounds.origin.y
         XCTAssertNotEqual(atSegment, atRow, "the nested anchor should refine within the card")
 
@@ -547,13 +563,9 @@ final class TranscriptTimestampedLayoutSmokeTests: XCTestCase {
         XCTAssertEqual(scrollView.contentView.bounds.origin.y, atSegment, accuracy: 1)
     }
 
-    private func settleFindScroll() {
-        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
-    }
-
     func testFindRevealsFirstEffectiveSegmentInsideTallLazyCard() async throws {
         let attribution = attribution(for: segments(count: 900, speakers: ["S1"]))
-        let target = attribution.editableSegments[696] // first of a 24-segment card
+        let target = attribution.editableSegments[696]  // first of a 24-segment card
         let row = try XCTUnwrap(effectiveTranscriptRowIDs(for: attribution)[target.id])
         XCTAssertEqual(row, target.id)
         let box = ProxyBox()
@@ -571,8 +583,7 @@ final class TranscriptTimestampedLayoutSmokeTests: XCTestCase {
         scrollView.contentView.scroll(to: .zero)
         scrollView.reflectScrolledClipView(scrollView.contentView)
 
-        await revealTranscriptFindSegment(target.id, cardID: row, usesLazyStack: true, proxy: proxy).value
-        settleFindScroll()
+        try await revealInLazyCard(target.id, cardID: row, proxy: proxy)
         let segmentCenter = scrollView.contentView.bounds.origin.y
         XCTAssertGreaterThan(segmentCenter, 10_000)
         // Centering the card leaves this line more than half a viewport above
@@ -600,8 +611,7 @@ final class TranscriptTimestampedLayoutSmokeTests: XCTestCase {
         scrollView.contentView.scroll(to: .zero)
         scrollView.reflectScrolledClipView(scrollView.contentView)
 
-        await revealTranscriptFindSegment(target.startMs, cardID: row, usesLazyStack: true, proxy: proxy).value
-        settleFindScroll()
+        try await revealInLazyCard(target.startMs, cardID: row, proxy: proxy)
         let segmentCenter = scrollView.contentView.bounds.origin.y
         XCTAssertGreaterThan(segmentCenter, 10_000)
         XCTAssertLessThan(segmentCenter, cardCenter - scrollView.contentView.bounds.height / 2)
@@ -623,8 +633,8 @@ final class TranscriptTimestampedLayoutSmokeTests: XCTestCase {
         // Realize the nested anchor so an incorrectly uncancelled refinement
         // cannot silently miss it and let this test pass.
         scroll(proxy, to: target.id)
-        let reveal = revealTranscriptFindSegment(
-            target.id, cardID: target.id, usesLazyStack: true, proxy: proxy
+        let reveal = try XCTUnwrap(
+            revealTranscriptFindSegment(target.id, cardID: target.id, usesLazyStack: true, proxy: proxy)
         )
         // Cancel after the synchronous card hop but before refinement, as a
         // manual scroll or a newer find command does.

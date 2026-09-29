@@ -80,27 +80,32 @@ struct TranscriptFindSegmentID<ID: Hashable>: Hashable {
     let segmentID: ID
 }
 
+/// Centers a find match. A segment that is its own row scrolls directly. A
+/// segment inside a speaker card scrolls to its line anchor; in a lazy stack
+/// that anchor is unresolvable until the card is realized, so the jump lands
+/// on the card first and returns the pending, cancellable second hop.
 @MainActor
 func revealTranscriptFindSegment<ID: Hashable>(
     _ segmentID: ID,
     cardID: ID?,
     usesLazyStack: Bool,
     proxy: ScrollViewProxy
-) -> Task<Void, Never> {
-    if let cardID, usesLazyStack {
-        proxy.scrollTo(cardID, anchor: .center)
+) -> Task<Void, Never>? {
+    guard let cardID else {
+        proxy.scrollTo(segmentID, anchor: .center)
+        return nil
     }
+    let lineID = TranscriptFindSegmentID(segmentID: segmentID)
+    guard usesLazyStack else {
+        proxy.scrollTo(lineID, anchor: .center)
+        return nil
+    }
+    proxy.scrollTo(cardID, anchor: .center)
     return Task { @MainActor in
-        if cardID != nil, usesLazyStack {
-            // Give the lazy card a layout pass before resolving its nested anchor.
-            try? await Task.sleep(for: .milliseconds(50))
-        }
+        // Give the lazy card a layout pass before resolving its nested anchor.
+        try? await Task.sleep(for: .milliseconds(50))
         guard !Task.isCancelled else { return }
-        if cardID != nil {
-            proxy.scrollTo(TranscriptFindSegmentID(segmentID: segmentID), anchor: .center)
-        } else {
-            proxy.scrollTo(segmentID, anchor: .center)
-        }
+        proxy.scrollTo(lineID, anchor: .center)
     }
 }
 
@@ -410,8 +415,8 @@ struct TranscriptTimestampedContentView<SpeakerLabelContent: View, TurnBanner: V
                 textSelectionEnabled: textSelectionEnabled
             )
         }
-        // Preserve the existing first-segment/card scroll target while later
-        // rows expose their own anchors for mid-turn find results.
+        // The card id is the playback and lazy-realization target; each line
+        // carries its own find anchor.
         .id(turn.segments.first?.startMs ?? 0)
         .onAppear(perform: onRenderedChildAppear)
     }

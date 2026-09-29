@@ -3,8 +3,7 @@ import SwiftUI
 /// In-transcript find bar (Transcript Detail Refresh / U2). A compact capsule
 /// that floats over the transcript reading pane: type to highlight matches,
 /// step through them with Return / ⇧Return, the chevrons, or ⌘G / ⇧⌘G, and
-/// dismiss with Esc or
-/// the close button.
+/// dismiss with Esc or the close button.
 ///
 /// Mirrors `SettingsSearchField`'s capsule styling and Esc/clear conventions
 /// but adds match navigation and an "X of Y" counter. It owns no search index —
