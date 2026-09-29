@@ -45,6 +45,8 @@ private struct TranscriptFindBlock: Equatable, Identifiable {
 private struct TranscriptFindReplacementReceipt: Equatable {
     let transcriptionID: UUID
     let correctionRevision: Int
+    /// The find query it replaced; the status only describes that search.
+    let query: String
     let count: Int
 }
 
@@ -2430,7 +2432,7 @@ struct TranscriptResultView: View {
                 set: { setFindReplaceExpanded($0) }
             ),
             isBusy: findReplaceSaving || viewModel.isApplyingSpeakerCorrection,
-            status: receipt.map { "Replaced \($0.count)" },
+            status: receipt.flatMap { $0.query == findModel.query ? "Replaced \($0.count)" : nil },
             onReplace: { performFindReplace(all: false) },
             onReplaceAll: { performFindReplace(all: true) },
             onUndo: onUndo
@@ -2495,6 +2497,7 @@ struct TranscriptResultView: View {
         }
         let count = replacements.reduce(0) { $0 + $1.count }
         let transcriptionID = transcription.id
+        let query = findModel.query
         findReplaceSaving = true
         findReplacementReceipt = nil
         transcriptEditError = nil
@@ -2510,6 +2513,7 @@ struct TranscriptResultView: View {
             findReplacementReceipt = TranscriptFindReplacementReceipt(
                 transcriptionID: transcriptionID,
                 correctionRevision: currentCorrectionRevision,
+                query: query,
                 count: count
             )
             rebuildFindBlocks()

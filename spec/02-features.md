@@ -1602,7 +1602,9 @@ are unaffected.
   match and moves to the next one; **Replace All** changes every match. Each
   saves the changed lines as one `reviseText` correction, so the find bar's
   **Undo**, or Undo in `Edit transcript`, reverts it in one step. Matching is the find
-  bar's own: case- and diacritic-insensitive, literal replacement text. Replace
+  bar's own: case- and diacritic-insensitive, literal replacement text (no
+  patterns). As in the reading editor, whitespace at a line's edges is trimmed
+  and a line left blank is omitted. Replace
   works on the Timed view, whose lines are what it edits, and switches a Text
   view there. Transcripts without usable timing have no replace row; their
   whole-transcript editor stays the way to change text.
