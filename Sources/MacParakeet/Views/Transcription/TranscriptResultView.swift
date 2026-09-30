@@ -2344,10 +2344,8 @@ struct TranscriptResultView: View {
     /// Scrolls the current match's block to the center of the reading pane.
     ///
     /// Find jumps rather than animates, like a browser: an animated `scrollTo`
-    /// through a lazy stack stops short of rows it has not realized yet. In the
-    /// lazy layout a block nested inside a speaker card cannot be resolved
-    /// until that card is realized, so the jump lands on the card first and
-    /// then, once it has been laid out, on the block itself.
+    /// through a lazy stack stops short of rows it has not realized yet.
+    /// `revealTranscriptFindSegment` owns the card-then-line hop.
     private func revealFindMatch(in block: TranscriptFindBlock, proxy: ScrollViewProxy) {
         findRevealTask?.cancel()
         findRevealTask = nil
