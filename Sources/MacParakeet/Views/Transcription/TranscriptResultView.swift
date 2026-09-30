@@ -609,6 +609,9 @@ struct TranscriptResultView: View {
     @State private var findReplaceText = ""
     @State private var findReplaceSaving = false
     @State private var findReplacementReceipt: TranscriptFindReplacementReceipt?
+    /// Changes each time the find bar opens, so a save that finishes after the
+    /// bar was closed and reopened leaves the new session alone.
+    @State private var findSessionID = UUID()
     /// True once find-navigation has taken over the auto-scroll pause, so closing
     /// the bar resumes playback-follow — without clobbering an unrelated
     /// manual-scroll pause when find never navigated.
@@ -2389,6 +2392,7 @@ struct TranscriptResultView: View {
         // Find is a reading affordance; editing uses the raw text editor.
         guard !editingTranscript, !editingReadingTranscript else { return }
         if !findBarVisible {
+            findSessionID = UUID()
             withAnimation(DesignSystem.Animation.contentSwap) { findBarVisible = true }
         }
         if showingReplace { setFindReplaceExpanded(true) }
@@ -2482,9 +2486,19 @@ struct TranscriptResultView: View {
         }
         // Resume after the inserted text, so a replacement that contains the
         // query is not matched again.
-        let resume = all ? nil : findModel.current.map {
-            (blockIndex: $0.blockIndex, offset: $0.range.location + replacement.utf16.count)
-        }
+        let resume: (blockIndex: Int, offset: Int)? =
+            all
+            ? nil
+            : findModel.current.flatMap { current in
+                replacements.first.map {
+                    (
+                        blockIndex: current.blockIndex,
+                        offset: TranscriptFindReplaceEdit.resumeOffset(
+                            after: current, replacement: replacement, in: $0
+                        )
+                    )
+                }
+            }
         guard let command = TranscriptFindReplaceEdit.command(for: replacements, in: segments) else {
             // Nothing would change (for example, the same text): just advance.
             if !all, findModel.hasMatches {
@@ -2496,6 +2510,7 @@ struct TranscriptResultView: View {
         let count = replacements.reduce(0) { $0 + $1.count }
         let transcriptionID = transcription.id
         let query = findModel.query
+        let sessionID = findSessionID
         findReplaceSaving = true
         findReplacementReceipt = nil
         transcriptEditError = nil
@@ -2507,7 +2522,7 @@ struct TranscriptResultView: View {
                 transcriptEditError = "Couldn't replace. The transcript is unchanged."
                 return
             }
-            guard findBarVisible else { return }
+            guard findBarVisible, findSessionID == sessionID else { return }
             findReplacementReceipt = TranscriptFindReplacementReceipt(
                 transcriptionID: transcriptionID,
                 correctionRevision: currentCorrectionRevision,

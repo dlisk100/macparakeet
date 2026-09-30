@@ -265,4 +265,28 @@ final class TranscriptFindModelTests: XCTestCase {
         m.moveToFirstMatch(atOrAfter: 2, utf16Offset: 3)
         XCTAssertEqual(m.currentMatchIndex, 0, "past the last match wraps to the first")
     }
+
+    func testResumeOffsetAccountsForTrimmedLeadingWhitespace() throws {
+        // "foo" -> " " at the line start saves "foo foo", not "  foo foo".
+        let m = model(["foo foo foo"], query: "foo")
+        let current = try XCTUnwrap(m.current)
+        let replaced = try XCTUnwrap(m.replacingCurrent(with: " "))
+
+        let offset = TranscriptFindReplaceEdit.resumeOffset(after: current, replacement: " ", in: replaced)
+        m.setBlocks(["foo foo"])
+        m.moveToFirstMatch(atOrAfter: 0, utf16Offset: offset)
+
+        XCTAssertEqual(m.current, .init(blockIndex: 0, range: NSRange(location: 0, length: 3)))
+    }
+
+    func testResumeOffsetIsZeroWhenTheLineIsOmitted() throws {
+        let m = model(["foo", "foo bar"], query: "foo")
+        let current = try XCTUnwrap(m.current)
+        let replaced = try XCTUnwrap(m.replacingCurrent(with: " "))
+
+        XCTAssertEqual(
+            TranscriptFindReplaceEdit.resumeOffset(after: current, replacement: " ", in: replaced), 0,
+            "the next line takes the omitted line's index; resume at its start"
+        )
+    }
 }
