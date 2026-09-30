@@ -2,8 +2,8 @@ import SwiftUI
 
 /// In-transcript find bar (Transcript Detail Refresh / U2). A compact capsule
 /// that floats over the transcript reading pane: type to highlight matches,
-/// step through them with the chevrons (or ⌘G / ⇧⌘G), and dismiss with Esc or
-/// the close button.
+/// step through them with Return / ⇧Return, the chevrons, or ⌘G / ⇧⌘G, and
+/// dismiss with Esc or the close button.
 ///
 /// Mirrors `SettingsSearchField`'s capsule styling and Esc/clear conventions
 /// but adds match navigation and an "X of Y" counter. It owns no search index —
@@ -33,8 +33,16 @@ struct TranscriptFindBar: View {
                 .font(DesignSystem.Typography.body)
                 .focused($isFocused)
                 .frame(minWidth: 130, maxWidth: 200)
-                // Enter steps to the next match, like a browser find bar.
+                // Enter steps to the next match and Shift-Enter to the
+                // previous one, like a browser find bar.
                 .onSubmit(onNext)
+                .onKeyPress(.return, phases: .down) { press in
+                    guard press.modifiers.contains(.shift),
+                        press.modifiers.isDisjoint(with: [.command, .option, .control])
+                    else { return .ignored }
+                    onPrev()
+                    return .handled
+                }
                 .onKeyPress(.escape) {
                     if !query.isEmpty {
                         query = ""

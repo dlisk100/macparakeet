@@ -1003,6 +1003,12 @@ update keeping it alive. Rules that follow from it:
   long single-speaker turn cannot defeat laziness. DEBUG launches can flip
   layout and row selection with `MACPARAKEET_DEBUG_TRANSCRIPT_LAZY` and
   `MACPARAKEET_DEBUG_TRANSCRIPT_SELECTION` to bisect a recurrence.
+- Find navigation uses Return / Shift-Return, the chevrons, or Command-G /
+  Shift-Command-G. It jumps to the matched line without animation. In lazy
+  speaker-card layouts it first realizes the owning card, then reveals a
+  separate line anchor, including for the card's first segment. New navigation,
+  query/content changes, manual scrolling, closing Find, and leaving the pane
+  cancel a pending jump.
 - Do not put more AppKit platform views (representables, selectable text
   overlays) inside lazily measured rows than the row already has.
 - `Tests/MacParakeetTests/Views/TranscriptTimestampedLayoutSmokeTests.swift`
