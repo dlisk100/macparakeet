@@ -435,6 +435,17 @@ public final class HotkeyManager {
             }
         }
 
+        if trigger == .fn,
+            gestureMode == .holdOnlyTapToFinish,
+            activeRecordingMode == .holdToTalk,
+            physicalKeyCode == 49
+        {
+            // The matching Fn+Space manager promotes this live take on its
+            // start callback. Do not cancel this manager before that handoff.
+            bareTap = false
+            return []
+        }
+
         if keyCode == 53 { // Escape
             return escapeOutputs()
         } else if !HotkeyTrigger.isFnKeyCode(physicalKeyCode) {
@@ -475,6 +486,47 @@ public final class HotkeyManager {
 
         bareTap = false
         return gestureMode == .singleTapToggle ? [] : gestureController.interrupted()
+    }
+
+    // Test seams that dispatch through the real callback path after exercising
+    // the same state transitions as forwarded event-tap events.
+    func processModifierFlagsChangedForTesting(
+        flags: CGEventFlags,
+        timestampMs: UInt64,
+        changedKeyCode: UInt16? = nil
+    ) {
+        handleOutputs(
+            modifierFlagsChangedOutputs(
+                flags: flags,
+                timestampMs: timestampMs,
+                changedKeyCode: changedKeyCode
+            )
+        )
+        previousModifierFlags = flags
+    }
+
+    func processModifierKeyDownForTesting(keyCode: Int64, timestampMs: UInt64) {
+        handleOutputs(modifierKeyDownOutputs(keyCode: keyCode, timestampMs: timestampMs))
+    }
+
+    func processChordEventForTesting(
+        type: CGEventType,
+        keyCode: UInt16,
+        flags: UInt64,
+        timestampMs: UInt64
+    ) {
+        handleOutputs(
+            chordEventOutputs(
+                type: type,
+                keyCode: keyCode,
+                flags: flags & Self.relevantModifierBits,
+                timestampMs: timestampMs
+            )
+        )
+    }
+
+    func processStartupDebounceElapsedForTesting() {
+        handleOutputs(gestureController.startupDebounceElapsed())
     }
 
     // Test seam: lets unit tests exercise the real modifier-path state logic
@@ -831,6 +883,17 @@ public final class HotkeyManager {
         return []
     }
 
+    func promoteHeldPushToTalkToPersistent() {
+        guard gestureMode == .holdOnlyTapToFinish, activeRecordingMode == .holdToTalk else { return }
+        cancelStartupTimer()
+        cancelHoldTimer()
+        gestureController.resumeRecording(mode: .persistent)
+        activeRecordingMode = .persistent
+        // Fn is still held during the chord. Its eventual release belongs to
+        // the chord, not to the new standalone-Fn finish gesture.
+        bareTap = false
+    }
+
     /// Notify state machine that cancel was triggered via UI (not Esc).
     /// Blocks hotkey during the cancel countdown window.
     public func notifyCancelledByUI() {
@@ -879,7 +942,9 @@ public final class HotkeyManager {
         case (.persistent, .singleTapToggle),
              (.persistent, .doubleTapOnly),
              (.persistent, .doubleTapAndHold),
+             (.persistent, .holdOnlyTapToFinish),
              (.holdToTalk, .holdOnly),
+             (.holdToTalk, .holdOnlyTapToFinish),
              (.holdToTalk, .doubleTapAndHold):
             return activeMode
         case (.persistent, .holdOnly),

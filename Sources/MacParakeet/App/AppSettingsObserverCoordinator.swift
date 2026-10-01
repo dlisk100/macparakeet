@@ -30,6 +30,7 @@ final class AppSettingsObserverCoordinator {
         [(Notification.Name, @MainActor @Sendable (AppSettingsObserverCoordinator) -> Void)] = [
             (.macParakeetHotkeyTriggerDidChange, { $0.onHotkeyTriggerChanged() }),
             (.macParakeetPushToTalkHotkeyTriggerDidChange, { $0.onPushToTalkHotkeyTriggerChanged() }),
+            (.macParakeetTapPushToTalkKeyToFinishHandsFreeDidChange, { $0.onHotkeyTriggerChanged() }),
             (.macParakeetMeetingHotkeyTriggerDidChange, { $0.onMeetingHotkeyTriggerChanged() }),
             (.macParakeetFileTranscriptionHotkeyTriggerDidChange, { $0.onFileTranscriptionHotkeyTriggerChanged() }),
             (.macParakeetYouTubeTranscriptionHotkeyTriggerDidChange, { $0.onYouTubeTranscriptionHotkeyTriggerChanged() }),

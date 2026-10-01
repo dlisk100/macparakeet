@@ -382,6 +382,15 @@ public final class SettingsViewModel {
         }
     }
 
+    public var tapPushToTalkKeyToFinishHandsFree: Bool {
+        didSet {
+            defaults.set(
+                tapPushToTalkKeyToFinishHandsFree,
+                forKey: UserDefaultsAppRuntimePreferences.tapPushToTalkKeyToFinishHandsFreeKey
+            )
+            NotificationCenter.default.post(name: .macParakeetTapPushToTalkKeyToFinishHandsFreeDidChange, object: nil)
+        }
+    }
     public var escapeCancelsDictation: Bool {
         didSet {
             defaults.set(
@@ -1101,6 +1110,9 @@ public final class SettingsViewModel {
             forKey: UserDefaultsAppRuntimePreferences.pauseMediaDuringDictationKey
         ) as? Bool ?? false
         playDictationCaptureSounds = UserDefaultsAppRuntimePreferences.playDictationCaptureSounds(defaults: defaults)
+        tapPushToTalkKeyToFinishHandsFree = defaults.object(
+            forKey: UserDefaultsAppRuntimePreferences.tapPushToTalkKeyToFinishHandsFreeKey
+        ) as? Bool ?? false
         escapeCancelsDictation = UserDefaultsAppRuntimePreferences.escapeCancelsDictation(defaults: defaults)
         preserveDiscardedDictations = UserDefaultsAppRuntimePreferences.preserveDiscardedDictations(defaults: defaults)
         instantDictationEnabled = defaults.object(

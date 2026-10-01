@@ -486,6 +486,9 @@ final class AppEnvironmentConfigurer {
                     aiFormatterEnabled: aiFormatterEnabled
                 ) ?? false
             },
+            onPromoteHeldDictationToPersistent: {
+                coordinatorRefs.dictation?.promoteHeldHotkeyRecordingToPersistent()
+            },
             onStopDictation: {
                 coordinatorRefs.dictation?.stopDictation()
             },

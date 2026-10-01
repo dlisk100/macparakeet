@@ -1627,6 +1627,142 @@ final class HotkeyManagerTests: XCTestCase {
         XCTAssertTrue(handsFreeStart.shouldSwallow)
     }
 
+    func testFnTapToFinishPromotesHeldPushToTalkOnFnSpaceWithoutStopping() {
+        let manager = makeManager(trigger: .fn, gestureMode: .holdOnlyTapToFinish)
+
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(
+                flags: [.maskSecondaryFn], timestampMs: 1_000,
+                changedKeyCode: HotkeyTrigger.canonicalFnKeyCode
+            ),
+            [.scheduleStartupDebounce(milliseconds: FnKeyStateMachine.defaultStartupDebounceMs)]
+        )
+        XCTAssertEqual(manager.startupDebounceElapsedForTesting(), [.startRecording(mode: .holdToTalk)])
+        XCTAssertEqual(manager.modifierKeyDownOutputsForTesting(keyCode: 49, timestampMs: 1_100), [])
+
+        manager.promoteHeldPushToTalkToPersistent()
+
+        XCTAssertEqual(manager.modifierKeyUpOutputsForTesting(keyCode: 49, timestampMs: 1_125), [])
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(
+                flags: [], timestampMs: 1_150,
+                changedKeyCode: HotkeyTrigger.canonicalFnKeyCode
+            ),
+            [.cancelStartupDebounce, .cancelHoldWindow]
+        )
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(
+                flags: [.maskSecondaryFn], timestampMs: 1_200,
+                changedKeyCode: HotkeyTrigger.canonicalFnKeyCode
+            ),
+            []
+        )
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(
+                flags: [.maskSecondaryFn], timestampMs: 1_225,
+                changedKeyCode: HotkeyTrigger.canonicalFnKeyCode
+            ),
+            []
+        )
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(
+                flags: [], timestampMs: 1_250,
+                changedKeyCode: HotkeyTrigger.canonicalFnKeyCode
+            ),
+            [.cancelStartupDebounce, .cancelHoldWindow, .stopRecording]
+        )
+    }
+
+    func testFnTapToFinishPromotionSurvivesFnReleaseBeforeSpaceRelease() {
+        let manager = makeManager(trigger: .fn, gestureMode: .holdOnlyTapToFinish)
+        _ = manager.modifierFlagsChangedOutputsForTesting(flags: [.maskSecondaryFn], timestampMs: 1_000)
+        XCTAssertEqual(manager.startupDebounceElapsedForTesting(), [.startRecording(mode: .holdToTalk)])
+        XCTAssertEqual(manager.modifierKeyDownOutputsForTesting(keyCode: 49, timestampMs: 1_100), [])
+        manager.promoteHeldPushToTalkToPersistent()
+
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(flags: [], timestampMs: 1_125),
+            [.cancelStartupDebounce, .cancelHoldWindow]
+        )
+        XCTAssertEqual(manager.modifierKeyUpOutputsForTesting(keyCode: 49, timestampMs: 1_150), [])
+    }
+
+    func testFnTapToFinishDoesNotPromoteOtherFnChordsOrWhenFeatureIsOff() {
+        let enabled = makeManager(trigger: .fn, gestureMode: .holdOnlyTapToFinish)
+        _ = enabled.modifierFlagsChangedOutputsForTesting(flags: [.maskSecondaryFn], timestampMs: 1_000)
+        XCTAssertEqual(enabled.startupDebounceElapsedForTesting(), [.startRecording(mode: .holdToTalk)])
+        XCTAssertEqual(
+            enabled.modifierKeyDownOutputsForTesting(keyCode: 0, timestampMs: 1_100),
+            [.cancelStartupDebounce, .cancelHoldWindow, .cancelRecording]
+        )
+
+        let disabled = makeManager(trigger: .fn, gestureMode: .holdOnly)
+        _ = disabled.modifierFlagsChangedOutputsForTesting(flags: [.maskSecondaryFn], timestampMs: 2_000)
+        XCTAssertEqual(disabled.startupDebounceElapsedForTesting(), [.startRecording(mode: .holdToTalk)])
+        XCTAssertEqual(
+            disabled.modifierKeyDownOutputsForTesting(keyCode: 49, timestampMs: 2_100),
+            [.cancelStartupDebounce, .cancelHoldWindow, .cancelRecording]
+        )
+    }
+
+    func testFnTapToFinishDoesNotStopHandsFreeOnFnSpaceOrOtherFnChord() {
+        let manager = makeManager(trigger: .fn, gestureMode: .holdOnlyTapToFinish)
+        manager.resumeRecording(mode: .persistent)
+
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(
+                flags: [.maskSecondaryFn], timestampMs: 1_000,
+                changedKeyCode: HotkeyTrigger.canonicalFnKeyCode
+            ),
+            []
+        )
+        XCTAssertEqual(
+            manager.modifierKeyDownOutputsForTesting(keyCode: 49, timestampMs: 1_025),
+            [.cancelStartupDebounce, .cancelHoldWindow]
+        )
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(
+                flags: [], timestampMs: 1_050,
+                changedKeyCode: HotkeyTrigger.canonicalFnKeyCode
+            ),
+            [.cancelStartupDebounce, .cancelHoldWindow]
+        )
+
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(
+                flags: [.maskSecondaryFn], timestampMs: 1_100,
+                changedKeyCode: HotkeyTrigger.canonicalFnKeyCode
+            ),
+            []
+        )
+        XCTAssertEqual(
+            manager.modifierKeyDownOutputsForTesting(keyCode: 0, timestampMs: 1_125),
+            [.cancelStartupDebounce, .cancelHoldWindow]
+        )
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(
+                flags: [], timestampMs: 1_150,
+                changedKeyCode: HotkeyTrigger.canonicalFnKeyCode
+            ),
+            [.cancelStartupDebounce, .cancelHoldWindow]
+        )
+
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(
+                flags: [.maskSecondaryFn], timestampMs: 1_200,
+                changedKeyCode: HotkeyTrigger.canonicalFnKeyCode
+            ),
+            []
+        )
+        XCTAssertEqual(
+            manager.modifierFlagsChangedOutputsForTesting(
+                flags: [], timestampMs: 1_250,
+                changedKeyCode: HotkeyTrigger.canonicalFnKeyCode
+            ),
+            [.cancelStartupDebounce, .cancelHoldWindow, .stopRecording]
+        )
+    }
+
     func testHoldOnlyGestureModeWorksForModifierChordTriggers() {
         let trigger = HotkeyTrigger.modifierChord(modifiers: ["control", "option"])
         let manager = makeManager(trigger: trigger, gestureMode: .holdOnly)

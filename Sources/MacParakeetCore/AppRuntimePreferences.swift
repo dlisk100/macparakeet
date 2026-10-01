@@ -570,6 +570,9 @@ public final class UserDefaultsAppRuntimePreferences: AppRuntimePreferencesProto
     /// Short start/stop cues when dictation capture is live (default off).
     public static let playDictationCaptureSoundsKey = "playDictationCaptureSounds"
     public static let escapeCancelsDictationKey = "escapeCancelsDictation"
+    /// Off by default: with Fn+Space hands-free and Fn push-to-talk, a bare
+    /// Fn tap can finish the persistent hands-free take.
+    public static let tapPushToTalkKeyToFinishHandsFreeKey = "tapPushToTalkKeyToFinishHandsFree"
     public static let preserveDiscardedDictationsKey = "preserveDiscardedDictations"
     public static let instantDictationEnabledKey = "instantDictationEnabled"
     public static let customVocabularyRecognitionBoostingEnabledKey = "customVocabularyRecognitionBoostingEnabled"

@@ -3120,6 +3120,20 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.pushToTalkHotkeyTrigger, .fn)
     }
 
+    func testTapPushToTalkKeyToFinishHandsFreeDefaultsOff() {
+        XCTAssertFalse(viewModel.tapPushToTalkKeyToFinishHandsFree)
+    }
+
+    func testTapPushToTalkKeyToFinishHandsFreePersists() {
+        viewModel.tapPushToTalkKeyToFinishHandsFree = true
+
+        XCTAssertTrue(SettingsViewModel(defaults: testDefaults).tapPushToTalkKeyToFinishHandsFree)
+        XCTAssertEqual(
+            testDefaults.object(forKey: UserDefaultsAppRuntimePreferences.tapPushToTalkKeyToFinishHandsFreeKey) as? Bool,
+            true
+        )
+    }
+
     func testDefaultDictationAndPushToTalkHotkeysPersistForFreshDefaults() {
         let vm = SettingsViewModel(defaults: testDefaults)
 

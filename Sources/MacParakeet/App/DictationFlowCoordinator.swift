@@ -494,6 +494,10 @@ final class DictationFlowCoordinator {
         return true
     }
 
+    func promoteHeldHotkeyRecordingToPersistent() {
+        sendEvent(.promoteHeldHotkeyRecordingToPersistent)
+    }
+
     func stopDictation() {
         sendEvent(.stopRequested)
     }

@@ -231,6 +231,33 @@ final class HotkeyGestureControllerTests: XCTestCase {
         )
     }
 
+    func testHoldOnlyTapToFinishStopsPersistentRecordingOnlyAfterBareTap() {
+        let controller = HotkeyGestureController(mode: .holdOnlyTapToFinish)
+        controller.resumeRecording(mode: .persistent)
+
+        XCTAssertEqual(controller.triggerPressed(timestampMs: 1_000), [])
+        XCTAssertEqual(
+            controller.triggerReleased(timestampMs: 1_050),
+            [.cancelStartupDebounce, .cancelHoldWindow, .stopRecording]
+        )
+    }
+
+    func testHoldOnlyTapToFinishIgnoresNonBareChordWhilePersistent() {
+        let controller = HotkeyGestureController(mode: .holdOnlyTapToFinish)
+        controller.resumeRecording(mode: .persistent)
+
+        XCTAssertEqual(controller.triggerPressed(timestampMs: 1_000), [])
+        XCTAssertEqual(
+            controller.nonBareTriggerReleased(),
+            [.cancelStartupDebounce, .cancelHoldWindow]
+        )
+        XCTAssertEqual(controller.triggerPressed(timestampMs: 1_200), [])
+        XCTAssertEqual(
+            controller.triggerReleased(timestampMs: 1_250),
+            [.cancelStartupDebounce, .cancelHoldWindow, .stopRecording]
+        )
+    }
+
     func testSingleTapToggleStartsAndStopsPersistentRecordingOnPresses() {
         let controller = HotkeyGestureController(mode: .singleTapToggle)
 

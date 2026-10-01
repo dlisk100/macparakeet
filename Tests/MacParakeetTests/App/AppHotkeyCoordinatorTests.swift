@@ -15,6 +15,10 @@ final class AppHotkeyCoordinatorTests: XCTestCase {
     private func makeCoordinator(
         settingsViewModel: SettingsViewModel,
         onStartDictation: @escaping (FnKeyStateMachine.RecordingMode, Bool?) -> Bool = { _, _ in true },
+        onPromoteHeldDictationToPersistent: @escaping () -> Void = {},
+        onStopDictation: @escaping () -> Void = {},
+        startDictationHotkeyManager: @escaping (HotkeyManager) -> Bool = { _ in true },
+        dictationRecordingModeProvider: @escaping () -> FnKeyStateMachine.RecordingMode? = { nil },
         onAnyHotkeyEnabled: @escaping () -> Void = {},
         onHotkeyUnavailable: @escaping () -> Void = {},
         onHotkeyConflict: @escaping (HotkeyTrigger, [HotkeyTrigger]) -> Void
@@ -22,7 +26,8 @@ final class AppHotkeyCoordinatorTests: XCTestCase {
         AppHotkeyCoordinator(
             settingsViewModel: settingsViewModel,
             onStartDictation: onStartDictation,
-            onStopDictation: {},
+            onPromoteHeldDictationToPersistent: onPromoteHeldDictationToPersistent,
+            onStopDictation: onStopDictation,
             onCancelDictation: {},
             onDiscardRecording: { _ in },
             onReadyForSecondTap: {},
@@ -31,9 +36,11 @@ final class AppHotkeyCoordinatorTests: XCTestCase {
             onTriggerFileTranscription: {},
             onTriggerYouTubeTranscription: {},
             onDictationHotkeyManagersChanged: { _ in },
+            startDictationHotkeyManager: startDictationHotkeyManager,
             onAnyHotkeyEnabled: onAnyHotkeyEnabled,
             onHotkeyUnavailable: onHotkeyUnavailable,
-            onHotkeyConflict: onHotkeyConflict
+            onHotkeyConflict: onHotkeyConflict,
+            dictationRecordingModeProvider: dictationRecordingModeProvider
         )
     }
 
@@ -232,6 +239,112 @@ final class AppHotkeyCoordinatorTests: XCTestCase {
                 conflict: nil
             )
         )
+    }
+
+    func testTapPushToTalkKeyToFinishUsesFnSpaceStartAndFnFinishManagers() {
+        let plan = AppHotkeyCoordinator.dictationHotkeyPlan(
+            handsFree: .fnSpace,
+            pushToTalk: .fn,
+            tapPushToTalkKeyToFinishHandsFree: true
+        )
+
+        XCTAssertEqual(
+            plan,
+            AppHotkeyCoordinator.DictationHotkeyPlan(
+                specs: [
+                    .init(trigger: .fnSpace, gestureMode: .singleTapToggle),
+                    .init(
+                        trigger: .fn,
+                        gestureMode: .holdOnlyTapToFinish,
+                        startupDebounceMs: FnKeyStateMachine.defaultTapThresholdMs,
+                        holdToTalkStopTailMs: AppHotkeyCoordinator.holdToTalkStopTailMs
+                    ),
+                ],
+                conflict: nil
+            )
+        )
+    }
+
+    func testFnSpacePromotesHeldFnTakeAndStillStopsItOnTheNextChord() {
+        let viewModel = makeViewModel()
+        viewModel.hotkeyTrigger = .fnSpace
+        viewModel.pushToTalkHotkeyTrigger = .fn
+        viewModel.tapPushToTalkKeyToFinishHandsFree = true
+        var startedModes: [FnKeyStateMachine.RecordingMode] = []
+        var activeMode: FnKeyStateMachine.RecordingMode?
+        var promotionCount = 0
+        var stopCount = 0
+        var managers: [HotkeyManager] = []
+        let coordinator = makeCoordinator(
+            settingsViewModel: viewModel,
+            onStartDictation: { mode, _ in
+                startedModes.append(mode)
+                activeMode = mode
+                return true
+            },
+            onPromoteHeldDictationToPersistent: {
+                promotionCount += 1
+                activeMode = .persistent
+            },
+            onStopDictation: {
+                stopCount += 1
+                activeMode = nil
+            },
+            startDictationHotkeyManager: { manager in
+                managers.append(manager)
+                return true
+            },
+            dictationRecordingModeProvider: { activeMode },
+            onHotkeyConflict: { _, _ in }
+        )
+
+        coordinator.setupDictationHotkeys()
+        XCTAssertEqual(managers.count, 2)
+        let fnSpace = managers[0]
+        let fn = managers[1]
+
+        fn.processModifierFlagsChangedForTesting(
+            flags: [.maskSecondaryFn],
+            timestampMs: 1_000,
+            changedKeyCode: HotkeyTrigger.canonicalFnKeyCode
+        )
+        fn.processStartupDebounceElapsedForTesting()
+        XCTAssertEqual(startedModes, [.holdToTalk])
+
+        fn.processModifierKeyDownForTesting(keyCode: 49, timestampMs: 1_100)
+        fnSpace.processChordEventForTesting(
+            type: .keyDown,
+            keyCode: 49,
+            flags: HotkeyTrigger.fnSpace.chordEventFlags,
+            timestampMs: 1_100
+        )
+        XCTAssertEqual(promotionCount, 1)
+        XCTAssertEqual(startedModes, [.holdToTalk], "promotion must keep the existing take")
+
+        fnSpace.processChordEventForTesting(
+            type: .keyUp,
+            keyCode: 49,
+            flags: HotkeyTrigger.fnSpace.chordEventFlags,
+            timestampMs: 1_125
+        )
+        fn.processModifierFlagsChangedForTesting(
+            flags: [],
+            timestampMs: 1_150,
+            changedKeyCode: HotkeyTrigger.canonicalFnKeyCode
+        )
+
+        fn.processModifierFlagsChangedForTesting(
+            flags: [.maskSecondaryFn],
+            timestampMs: 1_200,
+            changedKeyCode: HotkeyTrigger.canonicalFnKeyCode
+        )
+        fnSpace.processChordEventForTesting(
+            type: .keyDown,
+            keyCode: 49,
+            flags: HotkeyTrigger.fnSpace.chordEventFlags,
+            timestampMs: 1_210
+        )
+        XCTAssertEqual(stopCount, 1, "Fn+Space must remain able to stop a promoted take")
     }
 
     func testDictationHotkeyPlanKeepsStandardPushToTalkDebounceWhenNoFnChordConflict() {

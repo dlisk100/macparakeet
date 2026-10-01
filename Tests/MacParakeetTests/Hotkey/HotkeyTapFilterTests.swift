@@ -18,6 +18,13 @@ final class HotkeyTapFilterTests: XCTestCase {
         }
     }
 
+    func testBareSpacePassesThroughFnTapToFinishListener() {
+        var filter = HotkeyTapFilter(trigger: .fn)
+
+        XCTAssertFalse(filter.shouldSwallow(type: .keyDown, keyCode: 49, flags: 0))
+        XCTAssertFalse(filter.shouldSwallow(type: .keyUp, keyCode: 49, flags: 0))
+    }
+
     func testKeyCodeTriggerConsumesOnlyItsKey() {
         var filter = HotkeyTapFilter(trigger: .fromKeyCode(119))
         XCTAssertTrue(filter.shouldSwallow(type: .keyDown, keyCode: 119, flags: 0))

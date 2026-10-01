@@ -1121,6 +1121,14 @@ struct SettingsView: View {
 
                 Divider()
 
+                settingsToggleRow(
+                    title: "Tap Fn to finish hands-free",
+                    detail: "With Hands-free set to Fn+Space and Push to talk set to Fn, tap Fn to submit hands-free dictation. Holding Fn while idle still starts push-to-talk. Bare Space keeps its normal editing behavior.",
+                    isOn: $viewModel.tapPushToTalkKeyToFinishHandsFree
+                )
+
+                Divider()
+
                 // Relocated from the legacy `generalCard` during the IA
                 // refactor. The idle pill *is* the dictation summon button,
                 // so it belongs alongside the dictation hotkey, not in the

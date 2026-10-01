@@ -7,6 +7,7 @@ public final class HotkeyGestureController {
         case doubleTapAndHold
         case doubleTapOnly
         case holdOnly
+        case holdOnlyTapToFinish
         case singleTapToggle
     }
 
@@ -30,6 +31,8 @@ public final class HotkeyGestureController {
         case idle
         case pressed
         case active
+        case persistent
+        case persistentPressed
         case cancelWindow
         case blocked
     }
@@ -52,7 +55,7 @@ public final class HotkeyGestureController {
     /// CGEvent-tap recovery happens mid-gesture while the trigger is still held.
     public var hasPendingTriggerPress: Bool {
         switch mode {
-        case .holdOnly:
+        case .holdOnly, .holdOnlyTapToFinish:
             return holdOnlyState == .pressed
         case .doubleTapAndHold, .doubleTapOnly:
             return stateMachine.state == .waitingForSecondTap
@@ -78,7 +81,7 @@ public final class HotkeyGestureController {
     public func triggerPressed(timestampMs: UInt64) -> [Output] {
         guard !suppressedUntilReset else { return [] }
 
-        if mode == .holdOnly {
+        if mode == .holdOnly || mode == .holdOnlyTapToFinish {
             switch holdOnlyState {
             case .idle:
                 holdOnlyState = .pressed
@@ -86,7 +89,10 @@ public final class HotkeyGestureController {
             case .cancelWindow, .blocked:
                 holdOnlyState = .blocked
                 return []
-            case .pressed, .active:
+            case .persistent where mode == .holdOnlyTapToFinish:
+                holdOnlyState = .persistentPressed
+                return []
+            case .pressed, .active, .persistent, .persistentPressed:
                 return []
             }
         }
@@ -118,13 +124,18 @@ public final class HotkeyGestureController {
         guard !suppressedUntilReset else { return [] }
 
         var results: [Output] = [.cancelStartupDebounce, .cancelHoldWindow]
-        if mode == .holdOnly {
+        if mode == .holdOnly || mode == .holdOnlyTapToFinish {
             switch holdOnlyState {
             case .pressed:
                 holdOnlyState = .idle
             case .active:
                 holdOnlyState = .idle
                 results.append(.stopRecording)
+            case .persistentPressed:
+                holdOnlyState = .idle
+                results.append(.stopRecording)
+            case .persistent:
+                break
             case .blocked:
                 holdOnlyState = .cancelWindow
             case .idle, .cancelWindow:
@@ -150,13 +161,17 @@ public final class HotkeyGestureController {
 
         var results: [Output] = [.cancelStartupDebounce, .cancelHoldWindow]
 
-        if mode == .holdOnly {
+        if mode == .holdOnly || mode == .holdOnlyTapToFinish {
             switch holdOnlyState {
             case .pressed:
                 holdOnlyState = .idle
             case .active:
                 holdOnlyState = .idle
                 results.append(.cancelRecording)
+            case .persistentPressed:
+                holdOnlyState = .persistent
+            case .persistent:
+                break
             case .blocked:
                 holdOnlyState = .cancelWindow
             case .idle, .cancelWindow:
@@ -187,7 +202,7 @@ public final class HotkeyGestureController {
     public func interrupted() -> [Output] {
         guard !suppressedUntilReset else { return [] }
 
-        if mode == .holdOnly {
+        if mode == .holdOnly || mode == .holdOnlyTapToFinish {
             return nonBareTriggerReleased()
         }
 
@@ -212,12 +227,12 @@ public final class HotkeyGestureController {
     public func escapePressed() -> [Output] {
         guard !suppressedUntilReset else { return [] }
 
-        if mode == .holdOnly {
+        if mode == .holdOnly || mode == .holdOnlyTapToFinish {
             var results: [Output] = [.cancelStartupDebounce, .cancelHoldWindow]
             switch holdOnlyState {
             case .pressed:
                 holdOnlyState = .idle
-            case .active:
+            case .active, .persistent, .persistentPressed:
                 holdOnlyState = .cancelWindow
                 results.append(.cancelRecording)
             case .cancelWindow, .blocked:
@@ -263,7 +278,7 @@ public final class HotkeyGestureController {
 
         if mode == .doubleTapOnly { return [] }
         if mode == .singleTapToggle { return [] }
-        if mode == .holdOnly {
+        if mode == .holdOnly || mode == .holdOnlyTapToFinish {
             guard holdOnlyState == .pressed else { return [] }
             holdOnlyState = .active
             return [.startRecording(mode: .holdToTalk)]
@@ -276,7 +291,7 @@ public final class HotkeyGestureController {
 
         if mode == .doubleTapOnly { return [] }
         if mode == .singleTapToggle { return [] }
-        if mode == .holdOnly { return [] }
+        if mode == .holdOnly || mode == .holdOnlyTapToFinish { return [] }
         return outputs(for: stateMachine.holdTimerFired())
     }
 
@@ -292,7 +307,7 @@ public final class HotkeyGestureController {
         // Until then, every dictation trigger stays blocked, even if it did not
         // start the recording that was cancelled.
         suppressedUntilReset = false
-        if mode == .holdOnly {
+        if mode == .holdOnly || mode == .holdOnlyTapToFinish {
             holdOnlyState = .cancelWindow
             return
         }
@@ -305,8 +320,12 @@ public final class HotkeyGestureController {
 
     public func resumeRecording(mode: FnKeyStateMachine.RecordingMode) {
         suppressedUntilReset = false
-        if self.mode == .holdOnly {
-            holdOnlyState = mode == .holdToTalk ? .active : .idle
+        if self.mode == .holdOnly || self.mode == .holdOnlyTapToFinish {
+            if self.mode == .holdOnlyTapToFinish, mode == .persistent {
+                holdOnlyState = .persistent
+            } else {
+                holdOnlyState = mode == .holdToTalk ? .active : .idle
+            }
             return
         }
         if self.mode == .singleTapToggle {

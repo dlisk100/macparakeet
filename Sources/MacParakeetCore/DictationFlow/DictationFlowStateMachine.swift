@@ -55,6 +55,9 @@ public enum DictationFlowEvent: Equatable, Sendable {
     case readyPillRequested
     case readyPillTimedOut(generation: Int)
     case startRequested(mode: FnKeyStateMachine.RecordingMode)
+    /// Convert an active held-hotkey take to persistent capture without
+    /// restarting the audio service or changing its generation.
+    case promoteHeldHotkeyRecordingToPersistent
     case stopRequested
     case cancelRequested(reason: DictationFlowCancelReason)
     case discardRequested(showReadyPill: Bool)
@@ -240,6 +243,14 @@ public struct DictationFlowStateMachine: Sendable, Equatable {
 
         // MARK: Starting service
 
+        case (.checkingEntitlements(.holdToTalk), .promoteHeldHotkeyRecordingToPersistent):
+            state = .checkingEntitlements(mode: .persistent)
+            return []
+
+        case (.startingService(.holdToTalk), .promoteHeldHotkeyRecordingToPersistent):
+            state = .startingService(mode: .persistent)
+            return []
+
         case (.startingService(let mode), .recordingStarted(let gen)):
             guard gen == generation else { return [] }
             state = .recording(mode: mode)
@@ -281,6 +292,10 @@ public struct DictationFlowStateMachine: Sendable, Equatable {
             ]
 
         // MARK: Recording
+
+        case (.recording(.holdToTalk), .promoteHeldHotkeyRecordingToPersistent):
+            state = .recording(mode: .persistent)
+            return []
 
         case (.recording(let mode), .stopRequested):
             state = .processing

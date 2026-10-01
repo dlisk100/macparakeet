@@ -48,6 +48,15 @@ final class DictationFlowStateMachineTests: XCTestCase {
         return m
     }
 
+    func testPromoteHeldHotkeyRecordingToPersistentKeepsCaptureState() {
+        var machine = machineInRecording(mode: .holdToTalk)
+
+        let effects = machine.handle(.promoteHeldHotkeyRecordingToPersistent)
+
+        XCTAssertEqual(effects, [])
+        XCTAssertEqual(machine.state, .recording(mode: .persistent))
+    }
+
     // MARK: - Idle State
 
     func testInitialStateIsIdle() {
