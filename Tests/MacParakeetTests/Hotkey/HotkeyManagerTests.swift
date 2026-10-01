@@ -1642,7 +1642,12 @@ final class HotkeyManagerTests: XCTestCase {
 
         manager.promoteHeldPushToTalkToPersistent()
 
-        XCTAssertEqual(manager.modifierKeyUpOutputsForTesting(keyCode: 49, timestampMs: 1_125), [])
+        // Releasing the promotion chord clears pending gesture timers, but
+        // must not stop, cancel, or restart the recording.
+        XCTAssertEqual(
+            manager.modifierKeyUpOutputsForTesting(keyCode: 49, timestampMs: 1_125),
+            [.cancelStartupDebounce, .cancelHoldWindow]
+        )
         XCTAssertEqual(
             manager.modifierFlagsChangedOutputsForTesting(
                 flags: [], timestampMs: 1_150,
