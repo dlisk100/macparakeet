@@ -3216,15 +3216,18 @@ final class SettingsViewModelTests: XCTestCase {
         )
     }
 
-    func testLegacyFnSpaceDefaultPairMigratesToCombinedDefaultGesture() {
+    func testStoredFnSpaceDefaultPairSurvivesRelaunch() {
         HotkeyTrigger.fnSpace.save(to: testDefaults)
         HotkeyTrigger.defaultPushToTalk.save(to: testDefaults, defaultsKey: HotkeyTrigger.pushToTalkDefaultsKey)
 
         let vm = SettingsViewModel(defaults: testDefaults)
+        let relaunched = SettingsViewModel(defaults: testDefaults)
+        XCTAssertEqual(relaunched.hotkeyTrigger, .fnSpace)
+        XCTAssertEqual(relaunched.pushToTalkHotkeyTrigger, .defaultPushToTalk)
 
-        XCTAssertEqual(vm.hotkeyTrigger, .defaultDictation)
+        XCTAssertEqual(vm.hotkeyTrigger, .fnSpace)
         XCTAssertEqual(vm.pushToTalkHotkeyTrigger, .defaultPushToTalk)
-        XCTAssertEqual(HotkeyTrigger.current(defaults: testDefaults), .defaultDictation)
+        XCTAssertEqual(HotkeyTrigger.current(defaults: testDefaults), .fnSpace)
         XCTAssertEqual(
             HotkeyTrigger.current(
                 defaults: testDefaults,
@@ -3235,15 +3238,18 @@ final class SettingsViewModelTests: XCTestCase {
         )
     }
 
-    func testLegacyFnSpaceDefaultWithoutDedicatedPushToTalkMigratesToCombinedDefaultGesture() {
+    func testStoredFnSpaceWithoutDedicatedPushToTalkPreservesHandsFree() {
         testDefaults.removeObject(forKey: HotkeyTrigger.pushToTalkDefaultsKey)
         HotkeyTrigger.fnSpace.save(to: testDefaults)
 
         let vm = SettingsViewModel(defaults: testDefaults)
+        let relaunched = SettingsViewModel(defaults: testDefaults)
+        XCTAssertEqual(relaunched.hotkeyTrigger, .fnSpace)
+        XCTAssertEqual(relaunched.pushToTalkHotkeyTrigger, .defaultPushToTalk)
 
-        XCTAssertEqual(vm.hotkeyTrigger, .defaultDictation)
+        XCTAssertEqual(vm.hotkeyTrigger, .fnSpace)
         XCTAssertEqual(vm.pushToTalkHotkeyTrigger, .defaultPushToTalk)
-        XCTAssertEqual(HotkeyTrigger.current(defaults: testDefaults), .defaultDictation)
+        XCTAssertEqual(HotkeyTrigger.current(defaults: testDefaults), .fnSpace)
         XCTAssertEqual(
             HotkeyTrigger.current(
                 defaults: testDefaults,
@@ -3252,6 +3258,28 @@ final class SettingsViewModelTests: XCTestCase {
             ),
             .defaultPushToTalk
         )
+    }
+
+    func testSelectedFnSpaceHandsFreeAndFnPushToTalkSurviveRepeatedRelaunch() {
+        viewModel.hotkeyTrigger = .fnSpace
+        viewModel.pushToTalkHotkeyTrigger = .fn
+        viewModel.tapPushToTalkKeyToFinishHandsFree = true
+
+        for _ in 0..<3 {
+            let relaunched = SettingsViewModel(defaults: testDefaults)
+            XCTAssertEqual(relaunched.hotkeyTrigger, .fnSpace)
+            XCTAssertEqual(relaunched.pushToTalkHotkeyTrigger, .fn)
+            XCTAssertTrue(relaunched.tapPushToTalkKeyToFinishHandsFree)
+            XCTAssertEqual(HotkeyTrigger.current(defaults: testDefaults), .fnSpace)
+            XCTAssertEqual(
+                HotkeyTrigger.current(
+                    defaults: testDefaults,
+                    defaultsKey: HotkeyTrigger.pushToTalkDefaultsKey,
+                    fallback: .disabled
+                ),
+                .fn
+            )
+        }
     }
 
     func testStoredFnSpaceHandsFreePersistsWhenDedicatedPushToTalkIsCustom() {
