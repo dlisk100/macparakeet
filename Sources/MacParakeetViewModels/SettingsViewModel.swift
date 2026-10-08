@@ -1423,7 +1423,8 @@ public final class SettingsViewModel {
                 return (.disabled, .disabled, false, true)
             }
             if storedHandsFree == .fnSpace {
-                return (.defaultDictation, .defaultPushToTalk, true, true)
+                // Fn+Space is a valid saved hands-free choice, not a legacy PTT key.
+                return (storedHandsFree, .defaultPushToTalk, false, true)
             }
             let handsFree = defaultHandsFreeTrigger(avoiding: storedHandsFree)
             return (
@@ -1441,7 +1442,8 @@ public final class SettingsViewModel {
         )
         if storedHandsFree == .fnSpace,
            pushToTalk == .defaultPushToTalk {
-            return (.defaultDictation, .defaultPushToTalk, true, false)
+            // This supported pair intentionally shares Fn; preserve the user's choice.
+            return (storedHandsFree, pushToTalk, false, false)
         }
         if !storedHandsFree.isDisabled,
            !pushToTalk.isDisabled,
