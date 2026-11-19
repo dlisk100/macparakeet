@@ -149,6 +149,8 @@ mkdir -p "$RESOURCES_DIR/Legal"
 cp "$ROOT_DIR/Sources/MacParakeet/Resources/Legal/MarkdownDependencies.txt" "$RESOURCES_DIR/Legal/MarkdownDependencies.txt"
 cp "$ROOT_DIR/Sources/MacParakeet/Resources/Legal/NemotronDiarization.txt" "$RESOURCES_DIR/Legal/NemotronDiarization.txt"
 cp "$ROOT_DIR/THIRD_PARTY_LICENSES.md" "$RESOURCES_DIR/Legal/THIRD_PARTY_LICENSES.md"
+# Mirror the distribution builder's icon so the Dev app is not shown generic.
+cp -f "$ROOT_DIR/Assets/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
 
 # Only opted-in Debug launches need the experimental Ask runtime. Ordinary
 # development must not require Node/npm or reinstall helper dependencies.
@@ -190,6 +192,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
     <string>com.macparakeet.dev</string>
     <key>CFBundleName</key>
     <string>MacParakeet Dev</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleExecutable</key>
     <string>MacParakeet</string>
     <key>CFBundlePackageType</key>
